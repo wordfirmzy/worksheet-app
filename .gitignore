@@ -1,0 +1,62 @@
+# -----------------------
+# Python
+# -----------------------
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.pyc
+*.pdb
+*.egg
+*.egg-info/
+dist/
+build/
+*.manifest
+*.spec
+
+# Virtual environments
+venv/
+ENV/
+env/
+.venv/
+
+# -----------------------
+# OS-specific
+# -----------------------
+# Windows
+Thumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# macOS
+.DS_Store
+
+# -----------------------
+# Editor/IDE
+# -----------------------
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# -----------------------
+# Output files
+# -----------------------
+*.pdf
+*.docx
+*.log
+debug_*.txt
+
+# -----------------------
+# Fonts (large files)
+# -----------------------
+*.ttf
+*.otf
+
+# -----------------------
+# Node/Frontend (if any)
+# -----------------------
+node_modules/
+dist/
+build/
+.env
