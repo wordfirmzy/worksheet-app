@@ -24,8 +24,8 @@ CJK_PUNCT_RE = r'[\u3000-\u303F（）【】「」『』《》]'
 # Common abbreviations (lowercase, no period)
 # -------------------------------
 ABBREVIATIONS = {
-    "mr", "mrs", "ms", "dr", "st", "jr", "sr", "prof",
-    "inc", "ltd", "e.g", "i.e", "u.s.a", "ph.d", "vs"
+    "mr.", "mrs.", "dr.", "st.", "prof.", "jr.", "sr.", "ms.",
+    "etc.", "vs.", "e.g.", "i.e.", "u.s.", "u.k.", "a.m.", "p.m."
 }
 
 # -------------------------------
@@ -74,42 +74,6 @@ def remove_chinese(text: str) -> str:
 # -------------------------------
 # Subtitle parsing
 # -------------------------------
-def split_into_sentences(lines, min_words=5, max_words=30):
-    sentences = []
-    buffer = ""
-
-    for line in lines:
-        buffer = buffer + " " + line if buffer else line
-
-        # Split on punctuation followed by space + capital/number
-        parts = re.split(r'(?<=[.!?])\s+(?=[A-Z0-9])', buffer)
-        new_buffer = parts[-1]  # keep last fragment for next line
-
-        for s in parts[:-1]:
-            s_strip = s.strip()
-            words = s_strip.split()
-
-            if words:
-                last_word_clean = words[-1].rstrip(".").lower()
-                # Check if last word is abbreviation or contains periods (like U.S.A)
-                if last_word_clean in ABBREVIATIONS or re.match(r'^([a-zA-Z]\.){2,}$', words[-1]):
-                    # Don't split, append next fragment
-                    new_buffer = s_strip + " " + new_buffer
-                    continue
-
-            word_count = len(TOKEN_RE.findall(s_strip))
-            if min_words <= word_count <= max_words:
-                sentences.append(s_strip)
-
-        buffer = new_buffer
-
-    buffer = buffer.strip()
-    if buffer and min_words <= len(TOKEN_RE.findall(buffer)) <= max_words:
-        sentences.append(buffer)
-
-    return sentences
-
-
 def parse_subtitles(file_path, bilingual_mode=False):
     content = read_file_safely(file_path)
     lines = []
@@ -131,6 +95,50 @@ def parse_subtitles(file_path, bilingual_mode=False):
         if line:
             lines.append(line)
     return split_into_sentences(lines)
+    
+# -------------------------------
+# Sentence splitting with robust abbreviation handling
+# -------------------------------
+def split_into_sentences(lines, min_words=5, max_words=30):
+    sentences = []
+    buffer = ""
+    # regex for potential sentence breaks (period, ?, ! followed by space + capital)
+    sentence_end_re = re.compile(r'([.!?])\s+')
+    
+    for line in lines:
+        if buffer:
+            buffer += " " + line
+        else:
+            buffer = line
+
+        start = 0
+        for match in sentence_end_re.finditer(buffer):
+            end = match.end()
+            candidate = buffer[start:end].strip()
+
+            # get the last token before punctuation
+            tokens = candidate.split()
+            last_token = tokens[-1].lower() if tokens else ""
+            
+            # if the last token is an abbreviation, skip splitting
+            if last_token in ABBREVIATIONS:
+                continue
+
+            word_count = len(TOKEN_RE.findall(candidate))
+            if min_words <= word_count <= max_words:
+                sentences.append(candidate)
+            start = end
+
+        # remaining text after last match
+        buffer = buffer[start:].strip()
+
+    # process any leftover buffer
+    if buffer:
+        word_count = len(TOKEN_RE.findall(buffer))
+        if min_words <= word_count <= max_words:
+            sentences.append(buffer)
+
+    return sentences
 
 # -------------------------------
 # Build dictionaries
