@@ -10,6 +10,10 @@ function App() {
   const [debug, setDebug] = useState(false);
   const [status, setStatus] = useState("");
 
+  // 🆕 states for interactive "web" format
+  const [worksheetData, setWorksheetData] = useState([]);
+  const [wordBank, setWordBank] = useState([]);
+
   const handleGenerate = async (e) => {
     e.preventDefault();
     if (!file) {
@@ -37,31 +41,38 @@ function App() {
         throw new Error(`Server error: ${response.status}`);
       }
 
-      const blob = await response.blob();
-
-      // Extract filename from headers if available
-      const contentDisposition = response.headers.get("content-disposition");
-      let filename = "worksheet";
-      if (contentDisposition && contentDisposition.includes("filename=")) {
-        filename = contentDisposition
-          .split("filename=")[1]
-          .replace(/['"]/g, "")
-          .trim();
+      if (outputFormat === "web") {
+        // ✅ handle JSON response
+        const data = await response.json();
+        setWorksheetData(data.worksheet || []);
+        setWordBank(data.word_bank || []);
+        setStatus("Interactive worksheet ready!");
       } else {
-        filename += `.${outputFormat}`;
+        // ✅ handle file download (PDF/DOCX)
+        const blob = await response.blob();
+
+        const contentDisposition = response.headers.get("content-disposition");
+        let filename = "worksheet";
+        if (contentDisposition && contentDisposition.includes("filename=")) {
+          filename = contentDisposition
+            .split("filename=")[1]
+            .replace(/['"]/g, "")
+            .trim();
+        } else {
+          filename += `.${outputFormat}`;
+        }
+
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        window.URL.revokeObjectURL(url);
+
+        setStatus(`Worksheet downloaded: ${filename}`);
       }
-
-      // Trigger download
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = filename;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      window.URL.revokeObjectURL(url);
-
-      setStatus(`Worksheet generated: ${filename}`);
     } catch (err) {
       console.error("Error generating worksheet:", err);
       setStatus("Error generating worksheet. See console for details.");
@@ -101,6 +112,7 @@ function App() {
           <select value={outputFormat} onChange={(e) => setOutputFormat(e.target.value)}>
             <option value="pdf">PDF</option>
             <option value="docx">DOCX</option>
+            <option value="web">Web (Interactive)</option>
           </select>
         </div>
         <div>
@@ -126,9 +138,25 @@ function App() {
         <button type="submit">Generate Worksheet</button>
       </form>
       <p>{status}</p>
+
+      {/* 🆕 Interactive preview if "web" */}
+      {outputFormat === "web" && worksheetData.length > 0 && (
+        <div className="worksheet-preview">
+          <h2>Worksheet Preview</h2>
+          <ul>
+            {worksheetData.map((line, idx) => (
+              <li key={idx}>{line}</li>
+            ))}
+          </ul>
+
+          <h3>Word Bank</h3>
+          <p>{wordBank.join(", ")}</p>
+        </div>
+      )}
     </div>
   );
 }
 
 export default App;
+
 
