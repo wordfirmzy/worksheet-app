@@ -1,69 +1,142 @@
-from fastapi import FastAPI, UploadFile, File, Form
+# main.py
+from fastapi import FastAPI, UploadFile, File, Form, BackgroundTasks, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
-import shutil
+from fastapi.responses import FileResponse, JSONResponse
 import os
-import worksheet_generator  # your existing script
+import shutil
+import tempfile
+from typing import Optional
 
-app = FastAPI()
+import worksheet_generator  # your existing script (unchanged)
 
-# Allow frontend access (adjust origins in production)
+app = FastAPI(title="Worksheet Backend", version="1.0.0")
+
+# ----------------------------------------------------
+# CORS (adjust in production)
+# ----------------------------------------------------
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["*"],       # lock this down to your frontend origin in prod
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-UPLOAD_DIR = "uploads"
-os.makedirs(UPLOAD_DIR, exist_ok=True)
+# ----------------------------------------------------
+# Helpers
+# ----------------------------------------------------
+def _save_upload_to_temp(upload: UploadFile) -> str:
+    """Save uploaded file to a secure temp path and return the path."""
+    _, ext = os.path.splitext(upload.filename or "")
+    # Keep original extension to help any downstream logic
+    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=ext or ".tmp")
+    with tmp as f:
+        shutil.copyfileobj(upload.file, f)
+    return tmp.name
 
+def _cleanup(path: Optional[str]) -> None:
+    if path and os.path.exists(path):
+        try:
+            os.remove(path)
+        except Exception:
+            # Swallow cleanup errors
+            pass
+
+# ----------------------------------------------------
+# Health check
+# ----------------------------------------------------
+@app.get("/health")
+def health():
+    return {"status": "ok"}
+
+# ----------------------------------------------------
+# Generate endpoint
+# ----------------------------------------------------
 @app.post("/generate")
 async def generate(
+    background_tasks: BackgroundTasks,
     subtitle_file: UploadFile = File(...),
-    level: str = Form(...),            # "beginner" or "intermediate"
-    familiarity: str = Form(...),      # "once", "twice", or "more"
-    output_format: str = Form(...),    # "pdf" or "docx"
-    bilingual: bool = Form(False),     # True or False
-    debug: bool = Form(False)          # True or False
+
+    # core controls
+    level: str = Form(...),            # "beginner" | "intermediate"
+    familiarity: str = Form(...),      # "once" | "twice" | "more"
+    output_format: str = Form(...),    # "pdf" | "docx" | "web"
+
+    # options
+    bilingual: bool = Form(False),
+    debug: bool = Form(False),
 ):
-    # Save uploaded file
-    file_location = os.path.join(UPLOAD_DIR, subtitle_file.filename)
-    with open(file_location, "wb") as f:
-        shutil.copyfileobj(subtitle_file.file, f)
+    """
+    Returns:
+      - If output_format == 'pdf' or 'docx': a file download
+      - If output_format == 'web': JSON { worksheet: [...], word_bank: [...], bilingual: bool }
+    """
+    # 1) Save upload to a temp file
+    src_path = _save_upload_to_temp(subtitle_file)
 
-    # Parse subtitles
-    sentences = worksheet_generator.parse_subtitles(file_location, bilingual_mode=bilingual)
-    sentence_dict, word_index, freq_dict = worksheet_generator.build_dictionaries(sentences)
+    try:
+        # 2) Parse + index
+        sentences = worksheet_generator.parse_subtitles(src_path, bilingual_mode=bilingual)
+        sentence_dict, word_index, freq_dict = worksheet_generator.build_dictionaries(sentences)
 
-    # Optionally write debug files
-    if debug:
-        worksheet_generator.debug_output(sentences, freq_dict)
+        if debug:
+            worksheet_generator.debug_output(sentences, freq_dict)
 
-    # Filter words and generate worksheet
-    candidate_words = worksheet_generator.filter_words(freq_dict, familiarity.lower(), level.lower())
-    worksheet, word_bank = worksheet_generator.generate_worksheet(
-        sentence_dict, word_index, candidate_words, bilingual_mode=bilingual
-    )
+        # 3) Filter + generate
+        candidate_words = worksheet_generator.filter_words(
+            freq_dict, familiarity.lower(), level.lower()
+        )
+        worksheet, word_bank = worksheet_generator.generate_worksheet(
+            sentence_dict, word_index, candidate_words, bilingual_mode=bilingual
+        )
 
-    # Output file path
-    output_filename = f"worksheet.{output_format.lower()}"
-    if output_format.lower() == "pdf":
-        worksheet_generator.save_as_pdf(output_filename, worksheet, word_bank)
-    else:
-        worksheet_generator.save_as_docx(output_filename, worksheet, word_bank)
+        fmt = output_format.lower().strip()
+        if fmt == "web":
+            # 4a) Return JSON for interactive frontends
+            return JSONResponse(
+                {
+                    "message": "ok",
+                    "worksheet": worksheet,
+                    "word_bank": word_bank,
+                    "bilingual": bilingual,
+                }
+            )
 
-    # Return the file directly for download
-    return FileResponse(
-        output_filename,
-        media_type="application/octet-stream",
-        filename=output_filename
-    )
+        # 4b) Produce a file (PDF or DOCX) and stream it
+        out_suffix = ".pdf" if fmt == "pdf" else ".docx" if fmt == "docx" else None
+        if out_suffix is None:
+            raise HTTPException(status_code=400, detail="Invalid output_format. Use pdf | docx | web.")
 
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+        out_tmp = tempfile.NamedTemporaryFile(delete=False, suffix=out_suffix)
+        out_tmp_path = out_tmp.name
+        out_tmp.close()  # we'll write via worksheet_generator, not this handle
+
+        if fmt == "pdf":
+            worksheet_generator.save_as_pdf(out_tmp_path, worksheet, word_bank)
+            download_name = "worksheet.pdf"
+        else:
+            worksheet_generator.save_as_docx(out_tmp_path, worksheet, word_bank)
+            download_name = "worksheet.docx"
+
+        # make sure we clean up the file after the response is sent
+        background_tasks.add_task(_cleanup, out_tmp_path)
+
+        return FileResponse(
+            path=out_tmp_path,
+            media_type="application/pdf" if fmt == "pdf" else
+                       "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            filename=download_name,
+        )
+
+    except HTTPException:
+        # re-raise FastAPI errors as-is
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to generate worksheet: {e}") from e
+    finally:
+        # always remove the uploaded temp file
+        _cleanup(src_path)
+
 
 
 
