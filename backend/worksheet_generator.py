@@ -21,6 +21,14 @@ CHINESE_RE = re.compile(r'[\u4e00-\u9fff]')
 CJK_PUNCT_RE = r'[\u3000-\u303F（）【】「」『』《》]'
 
 # -------------------------------
+# Common abbreviations (lowercase, no period)
+# -------------------------------
+ABBREVIATIONS = {
+    "mr", "mrs", "ms", "dr", "st", "jr", "sr", "prof",
+    "inc", "ltd", "e.g", "i.e", "u.s.a", "ph.d", "vs"
+}
+
+# -------------------------------
 # Encoding-safe file reader
 # -------------------------------
 def read_file_safely(file_path):
