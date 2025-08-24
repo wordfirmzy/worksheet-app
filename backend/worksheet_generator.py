@@ -69,22 +69,38 @@ def remove_chinese(text: str) -> str:
 def split_into_sentences(lines, min_words=5, max_words=30):
     sentences = []
     buffer = ""
+
     for line in lines:
-        if buffer:
-            buffer += " " + line
-        else:
-            buffer = line
+        buffer = buffer + " " + line if buffer else line
+
+        # Split on punctuation followed by space + capital/number
         parts = re.split(r'(?<=[.!?])\s+(?=[A-Z0-9])', buffer)
+        new_buffer = parts[-1]  # keep last fragment for next line
+
         for s in parts[:-1]:
-            s = s.strip()
-            word_count = len(TOKEN_RE.findall(s))
+            s_strip = s.strip()
+            words = s_strip.split()
+
+            if words:
+                last_word_clean = words[-1].rstrip(".").lower()
+                # Check if last word is abbreviation or contains periods (like U.S.A)
+                if last_word_clean in ABBREVIATIONS or re.match(r'^([a-zA-Z]\.){2,}$', words[-1]):
+                    # Don't split, append next fragment
+                    new_buffer = s_strip + " " + new_buffer
+                    continue
+
+            word_count = len(TOKEN_RE.findall(s_strip))
             if min_words <= word_count <= max_words:
-                sentences.append(s)
-        buffer = parts[-1]
+                sentences.append(s_strip)
+
+        buffer = new_buffer
+
     buffer = buffer.strip()
     if buffer and min_words <= len(TOKEN_RE.findall(buffer)) <= max_words:
         sentences.append(buffer)
+
     return sentences
+
 
 def parse_subtitles(file_path, bilingual_mode=False):
     content = read_file_safely(file_path)
