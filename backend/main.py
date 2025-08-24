@@ -1,6 +1,6 @@
 from fastapi import FastAPI, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 import shutil
 import os
 import worksheet_generator  # your existing script
@@ -16,14 +16,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Directories for uploads and outputs
 UPLOAD_DIR = "uploads"
-OUTPUT_DIR = "outputs"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
-os.makedirs(OUTPUT_DIR, exist_ok=True)
-
-# Serve output files to frontend
-app.mount("/outputs", StaticFiles(directory=OUTPUT_DIR), name="outputs")
 
 @app.post("/generate")
 async def generate(
@@ -53,22 +47,23 @@ async def generate(
         sentence_dict, word_index, candidate_words, bilingual_mode=bilingual
     )
 
-    # Save output to outputs directory
+    # Output file path
     output_filename = f"worksheet.{output_format.lower()}"
-    output_path = os.path.join(OUTPUT_DIR, output_filename)
     if output_format.lower() == "pdf":
-        worksheet_generator.save_as_pdf(output_path, worksheet, word_bank)
+        worksheet_generator.save_as_pdf(output_filename, worksheet, word_bank)
     else:
-        worksheet_generator.save_as_docx(output_path, worksheet, word_bank)
+        worksheet_generator.save_as_docx(output_filename, worksheet, word_bank)
 
-    # Return URL for frontend to download
-    return {
-        "message": "Worksheet generated",
-        "file_url": f"/outputs/{output_filename}"
-    }
+    # Return the file directly for download
+    return FileResponse(
+        output_filename,
+        media_type="application/octet-stream",
+        filename=output_filename
+    )
 
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
+
 
 
