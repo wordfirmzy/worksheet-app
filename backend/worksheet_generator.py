@@ -173,6 +173,7 @@ def generate_worksheet(sentence_dict, word_index, word_list, num_words=12, bilin
     worksheet = []
     word_bank = []
     used_sentences = set()
+
     for word in chosen_words:
         if word not in word_index:
             continue
@@ -186,21 +187,30 @@ def generate_worksheet(sentence_dict, word_index, word_list, num_words=12, bilin
         sid = random.choice(available_sids)
         sentence = sentence_dict[sid]
         blanked = sentence
+
         if bilingual_mode:
-            parts = []
-            for token in re.split(f"({CHINESE_RE.pattern})", blanked):
+            # Split by Chinese characters
+            parts = re.split(f"({CHINESE_RE.pattern})", blanked)
+            new_parts = []
+            for token in parts:
                 if CHINESE_RE.search(token):
-                    parts.append(token)
+                    # Keep Chinese text
+                    new_parts.append(token)
                 else:
-                    token = TOKEN_RE.sub("________________________", token)
-                    parts.append(token)
-            blanked = ''.join(parts)
+                    # Only blank the target word, keep other English words
+                    pattern = re.compile(rf"(?<!\w){re.escape(word)}(?!\w)", re.IGNORECASE)
+                    token = pattern.sub("________________________", token)
+                    new_parts.append(token)
+            blanked = ''.join(new_parts)
         else:
+            # Non-bilingual: blank the target word
             pattern = re.compile(rf"(?<!\w){re.escape(word)}(?!\w)", re.IGNORECASE)
             blanked = pattern.sub("________________________", blanked)
+
         worksheet.append(blanked)
         word_bank.append(word)
         used_sentences.add(sid)
+
     random.shuffle(word_bank)
     return worksheet, word_bank
 
