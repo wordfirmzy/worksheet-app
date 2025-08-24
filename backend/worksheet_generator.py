@@ -210,13 +210,13 @@ def generate_worksheet(sentence_dict, word_index, word_list, num_words=12, bilin
 def save_as_pdf(filename, worksheet, word_bank):
     doc = SimpleDocTemplate(filename)
     styles = getSampleStyleSheet()
-    font_path = os.path.join(os.path.dirname(__file__), "fonts", "NotoSerifCJKsc-VF.ttf")
+    font_path = os.path.join(os.path.dirname(__file__), "fonts", "TaipeiSansTC-Beta-Regular.ttf")
     if os.path.exists(font_path):
-        pdfmetrics.registerFont(TTFont("NotoSerifCJK", font_path))
+        pdfmetrics.registerFont(TTFont("TaipeiSans", font_path))
         styles.add(ParagraphStyle(
             name="CJKNormal",
             parent=styles["Normal"],
-            fontName="NotoSerifCJK",
+            fontName="TaipeiSans",
             fontSize=12,
             leading=18,
             leftIndent=15,
@@ -225,7 +225,7 @@ def save_as_pdf(filename, worksheet, word_bank):
         styles.add(ParagraphStyle(
             name="CJKNormalNoIndent",
             parent=styles["Normal"],
-            fontName="NotoSerifCJK",
+            fontName="TaipeiSans",
             fontSize=12,
             leading=18
         ))
