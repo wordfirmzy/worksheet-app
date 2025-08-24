@@ -210,7 +210,7 @@ def generate_worksheet(sentence_dict, word_index, word_list, num_words=12, bilin
 def save_as_pdf(filename, worksheet, word_bank):
     doc = SimpleDocTemplate(filename)
     styles = getSampleStyleSheet()
-    font_path = os.path.join(os.path.dirname(__file__), "fonts", "TaipeiSansTC-Beta-Regular.ttf")
+    font_path = os.path.join(os.path.dirname(__file__), "fonts", "Taipei Sans TC Beta Regular.ttf")
     if os.path.exists(font_path):
         pdfmetrics.registerFont(TTFont("TaipeiSans", font_path))
         styles.add(ParagraphStyle(
