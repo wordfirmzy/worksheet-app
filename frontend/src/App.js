@@ -38,9 +38,9 @@ function App() {
       if (!response.ok) throw new Error(`Server error: ${response.status}`);
 
       if (outputFormat === "web") {
-        const html = await response.text();
-        localStorage.setItem("worksheetHTML", html);
-        window.location.href = "/worksheet"; // navigate
+        const data = await response.json();
+        localStorage.setItem("worksheetData", JSON.stringify(data));
+        window.location.href = "/worksheet";
       } else {
         const blob = await response.blob();
 
