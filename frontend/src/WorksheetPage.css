@@ -1,0 +1,22 @@
+/* WorksheetPage.css */
+.worksheet-page {
+  padding: 20px;
+}
+
+.sentence {
+  font-size: 18px;
+  margin-bottom: 12px;
+}
+
+.blank {
+  display: inline-block;
+  width: 60px;
+  border-bottom: 2px solid #000;
+  margin: 0 4px;
+}
+
+.word-bank {
+  display: flex;
+  flex-wrap: wrap;
+  margin-top: 16px;
+}
