@@ -1,83 +1,80 @@
-// WorksheetPage.js
+// src/WorksheetPage.js
 import React, { useEffect, useState } from "react";
-import { DndContext, closestCenter, PointerSensor, useSensor, useSensors } from "@dnd-kit/core";
-import { arrayMove, SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy } from "@dnd-kit/sortable";
-import SortableItem from "./SortableItem"; // we'll create this next
+import { useNavigate } from "react-router-dom";
+import { DndContext, closestCenter } from "@dnd-kit/core";
+import { arrayMove, SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
+import SortableItem from "./SortableItem"; // You'll need a small component to handle each draggable
 
 function WorksheetPage() {
   const [worksheet, setWorksheet] = useState([]);
   const [wordBank, setWordBank] = useState([]);
   const [bilingual, setBilingual] = useState(false);
-  const [completed, setCompleted] = useState({}); // track filled blanks
+  const navigate = useNavigate();
 
   useEffect(() => {
-    const stored = localStorage.getItem("worksheetHTML");
-    if (stored) {
-      const data = JSON.parse(stored);
-      setWorksheet(data.worksheet || []);
-      setWordBank(data.word_bank || []);
-      setBilingual(data.bilingual || false);
+    const html = localStorage.getItem("worksheetJSON");
+    if (!html) {
+      // No worksheet in storage, go back
+      navigate("/");
+      return;
     }
-  }, []);
 
-  const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
-  );
+    const data = JSON.parse(html);
+    setWorksheet(data.worksheet || []);
+    setWordBank(data.word_bank || []);
+    setBilingual(data.bilingual || false);
+  }, [navigate]);
 
   const handleDragEnd = (event) => {
     const { active, over } = event;
-    if (over && active.id !== over.id) {
-      setWordBank((prev) => {
-        const oldIndex = prev.indexOf(active.id);
-        const newIndex = prev.indexOf(over.id);
-        return arrayMove(prev, oldIndex, newIndex);
-      });
-    }
+    if (!over) return;
+
+    const oldIndex = wordBank.findIndex((w) => w.id === active.id);
+    const newIndex = wordBank.findIndex((w) => w.id === over.id);
+
+    setWordBank((items) => arrayMove(items, oldIndex, newIndex));
   };
 
-  const handleDrop = (blankId, word) => {
-    setCompleted((prev) => ({ ...prev, [blankId]: word }));
+  const handleDrop = (sentenceIndex, word) => {
+    setWorksheet((ws) =>
+      ws.map((s, i) => {
+        if (i !== sentenceIndex) return s;
+        // Fill the first empty blank
+        const blanks = [...s.blanks];
+        const firstEmpty = blanks.findIndex((b) => !b.word);
+        if (firstEmpty === -1) return s;
+        blanks[firstEmpty].word = word.text;
+        blanks[firstEmpty].correct = blanks[firstEmpty].answer === word.text;
+        return { ...s, blanks };
+      })
+    );
   };
+
+  if (!worksheet.length) return <div>Loading worksheet...</div>;
 
   return (
-    <div>
+    <div className="worksheet-page">
       <h1>Interactive Worksheet</h1>
-      <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-        <div>
-          <h2>Word Bank</h2>
-          <SortableContext items={wordBank} strategy={verticalListSortingStrategy}>
-            {wordBank.map((word) => (
-              <SortableItem key={word} id={word} />
-            ))}
-          </SortableContext>
-        </div>
-
-        <div>
-          <h2>Sentences</h2>
-          {worksheet.map((sentence, sIdx) => (
-            <p key={sIdx}>
-              {sentence.map((token, tIdx) => {
-                if (token.is_blank) {
-                  const filled = completed[token.blankId] || "";
-                  return (
-                    <span
-                      key={tIdx}
-                      style={{ borderBottom: "1px solid black", padding: "0 5px", margin: "0 2px" }}
-                      onClick={() => {
-                        const chosenWord = window.prompt("Enter word for this blank:", filled);
-                        if (chosenWord) handleDrop(token.blankId, chosenWord);
-                      }}
-                    >
-                      {filled || "____"}
-                    </span>
-                  );
-                } else {
-                  return <span key={tIdx}>{token.text} </span>;
-                }
-              })}
-            </p>
+      {worksheet.map((sentence, idx) => (
+        <div key={idx} className="sentence-block">
+          {sentence.blanks.map((blank, bIdx) => (
+            <span key={bIdx} className={`blank ${blank.correct === true ? "correct" : blank.correct === false ? "wrong" : ""}`}>
+              {blank.word || "_____"}
+            </span>
           ))}
+          <span className="original-sentence">
+            {bilingual ? ` (${sentence.original})` : ""}
+          </span>
         </div>
+      ))}
+
+      <h2>Word Bank</h2>
+      <DndContext collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+        <SortableContext items={wordBank} strategy={verticalListSortingStrategy}>
+          {wordBank.map((word) => (
+            <SortableItem key={word.id} id={word.id} word={word.text} />
+          ))}
+        </SortableContext>
       </DndContext>
     </div>
   );

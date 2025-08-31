@@ -1,7 +1,8 @@
+// src/App.js
 import React, { useState } from "react";
 import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
 import "./App.css";
-import DragDropWorksheet from "./DragDropWorksheet";
+import WorksheetPage from "./WorksheetPage";
 
 function App() {
   const [file, setFile] = useState(null);
@@ -38,18 +39,18 @@ function App() {
       if (!response.ok) throw new Error(`Server error: ${response.status}`);
 
       if (outputFormat === "web") {
-        // Web output: get JSON
-        const data = await response.json();
-        localStorage.setItem("worksheetJSON", JSON.stringify(data.worksheet));
-        localStorage.setItem("wordBankJSON", JSON.stringify(data.word_bank));
-        window.location.href = "/worksheet"; // navigate to drag-and-drop page
+        const json = await response.json(); // backend returns JSON
+        localStorage.setItem("worksheetJSON", JSON.stringify(json));
+        window.location.href = "/worksheet"; // redirect to web output page
       } else {
-        // PDF or DOCX download
         const blob = await response.blob();
         const contentDisposition = response.headers.get("content-disposition");
         let filename = "worksheet";
         if (contentDisposition && contentDisposition.includes("filename=")) {
-          filename = contentDisposition.split("filename=")[1].replace(/['"]/g, "").trim();
+          filename = contentDisposition
+            .split("filename=")[1]
+            .replace(/['"]/g, "")
+            .trim();
         } else {
           filename += `.${outputFormat}`;
         }
@@ -138,21 +139,14 @@ function App() {
             </div>
           }
         />
-        <Route
-          path="/worksheet"
-          element={
-            <DragDropWorksheet
-              worksheet={JSON.parse(localStorage.getItem("worksheetJSON"))}
-              wordBank={JSON.parse(localStorage.getItem("wordBankJSON"))}
-            />
-          }
-        />
+        <Route path="/worksheet" element={<WorksheetPage />} />
       </Routes>
     </Router>
   );
 }
 
 export default App;
+
 
 
 
