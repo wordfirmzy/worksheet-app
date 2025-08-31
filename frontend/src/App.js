@@ -1,4 +1,3 @@
-// src/App.js
 import React, { useState } from "react";
 import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
 import "./App.css";
@@ -39,9 +38,9 @@ function App() {
       if (!response.ok) throw new Error(`Server error: ${response.status}`);
 
       if (outputFormat === "web") {
-        const json = await response.json(); // backend returns JSON
-        localStorage.setItem("worksheetJSON", JSON.stringify(json));
-        window.location.href = "/worksheet"; // redirect to web output page
+        const html = await response.text();
+        localStorage.setItem("worksheetHTML", html);
+        window.location.href = "/worksheet"; // navigate to interactive page
       } else {
         const blob = await response.blob();
         const contentDisposition = response.headers.get("content-disposition");
@@ -90,6 +89,7 @@ function App() {
                     required
                   />
                 </div>
+
                 <div>
                   <label>Level:</label>
                   <select value={level} onChange={(e) => setLevel(e.target.value)}>
@@ -97,6 +97,7 @@ function App() {
                     <option value="intermediate">Intermediate</option>
                   </select>
                 </div>
+
                 <div>
                   <label>Familiarity:</label>
                   <select value={familiarity} onChange={(e) => setFamiliarity(e.target.value)}>
@@ -105,14 +106,16 @@ function App() {
                     <option value="more">More than twice</option>
                   </select>
                 </div>
+
                 <div>
                   <label>Output format:</label>
                   <select value={outputFormat} onChange={(e) => setOutputFormat(e.target.value)}>
                     <option value="pdf">PDF</option>
                     <option value="docx">DOCX</option>
-                    <option value="web">Web</option>
+                    <option value="web">Web (interactive)</option>
                   </select>
                 </div>
+
                 <div>
                   <label>
                     <input
@@ -123,6 +126,7 @@ function App() {
                     Bilingual
                   </label>
                 </div>
+
                 <div>
                   <label>
                     <input
@@ -133,6 +137,7 @@ function App() {
                     Debug
                   </label>
                 </div>
+
                 <button type="submit">Generate Worksheet</button>
               </form>
               <p>{status}</p>
@@ -146,7 +151,6 @@ function App() {
 }
 
 export default App;
-
 
 
 

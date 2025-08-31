@@ -1,83 +1,103 @@
 // src/WorksheetPage.js
 import React, { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
-import { DndContext, closestCenter } from "@dnd-kit/core";
-import { arrayMove, SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
-import SortableItem from "./SortableItem"; // You'll need a small component to handle each draggable
+import {
+  DndContext,
+  closestCenter,
+  PointerSensor,
+  useSensor,
+  useSensors,
+} from "@dnd-kit/core";
+import {
+  arrayMove,
+  SortableContext,
+  rectSortingStrategy,
+  sortableKeyboardCoordinates,
+  useSortable,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
+import "./WorksheetPage.css";
 
-function WorksheetPage() {
+function DraggableWord({ id, word }) {
+  const { attributes, listeners, setNodeRef, transform, transition } = useSortable({ id });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    padding: "4px 8px",
+    margin: "4px",
+    backgroundColor: "#e0e0e0",
+    borderRadius: "4px",
+    cursor: "grab",
+    display: "inline-block",
+  };
+
+  return (
+    <div ref={setNodeRef} style={style} {...attributes} {...listeners}>
+      {word}
+    </div>
+  );
+}
+
+export default function WorksheetPage() {
   const [worksheet, setWorksheet] = useState([]);
   const [wordBank, setWordBank] = useState([]);
   const [bilingual, setBilingual] = useState(false);
-  const navigate = useNavigate();
+
+  const sensors = useSensors(useSensor(PointerSensor));
 
   useEffect(() => {
-    const html = localStorage.getItem("worksheetJSON");
-    if (!html) {
-      // No worksheet in storage, go back
-      navigate("/");
-      return;
+    const htmlData = localStorage.getItem("worksheetHTML");
+    if (htmlData) {
+      try {
+        const parsed = JSON.parse(htmlData);
+        setWorksheet(parsed.worksheet || []);
+        setWordBank(parsed.word_bank || []);
+        setBilingual(parsed.bilingual || false);
+      } catch (err) {
+        console.error("Failed to parse worksheet data:", err);
+      }
     }
-
-    const data = JSON.parse(html);
-    setWorksheet(data.worksheet || []);
-    setWordBank(data.word_bank || []);
-    setBilingual(data.bilingual || false);
-  }, [navigate]);
+  }, []);
 
   const handleDragEnd = (event) => {
     const { active, over } = event;
     if (!over) return;
 
-    const oldIndex = wordBank.findIndex((w) => w.id === active.id);
-    const newIndex = wordBank.findIndex((w) => w.id === over.id);
-
-    setWordBank((items) => arrayMove(items, oldIndex, newIndex));
+    const oldIndex = wordBank.indexOf(active.id);
+    const newIndex = wordBank.indexOf(over.id);
+    if (oldIndex !== -1 && newIndex !== -1) {
+      setWordBank(arrayMove(wordBank, oldIndex, newIndex));
+    }
   };
-
-  const handleDrop = (sentenceIndex, word) => {
-    setWorksheet((ws) =>
-      ws.map((s, i) => {
-        if (i !== sentenceIndex) return s;
-        // Fill the first empty blank
-        const blanks = [...s.blanks];
-        const firstEmpty = blanks.findIndex((b) => !b.word);
-        if (firstEmpty === -1) return s;
-        blanks[firstEmpty].word = word.text;
-        blanks[firstEmpty].correct = blanks[firstEmpty].answer === word.text;
-        return { ...s, blanks };
-      })
-    );
-  };
-
-  if (!worksheet.length) return <div>Loading worksheet...</div>;
 
   return (
     <div className="worksheet-page">
       <h1>Interactive Worksheet</h1>
-      {worksheet.map((sentence, idx) => (
-        <div key={idx} className="sentence-block">
-          {sentence.blanks.map((blank, bIdx) => (
-            <span key={bIdx} className={`blank ${blank.correct === true ? "correct" : blank.correct === false ? "wrong" : ""}`}>
-              {blank.word || "_____"}
-            </span>
-          ))}
-          <span className="original-sentence">
-            {bilingual ? ` (${sentence.original})` : ""}
-          </span>
-        </div>
-      ))}
+
+      <div className="sentences">
+        {worksheet.map((sentence, idx) => (
+          <p key={idx} className="sentence">
+            {sentence.map((token, i) =>
+              token.blank ? (
+                <span key={i} className="blank">______</span>
+              ) : (
+                <span key={i}>{token.text} </span>
+              )
+            )}
+          </p>
+        ))}
+      </div>
 
       <h2>Word Bank</h2>
-      <DndContext collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-        <SortableContext items={wordBank} strategy={verticalListSortingStrategy}>
-          {wordBank.map((word) => (
-            <SortableItem key={word.id} id={word.id} word={word.text} />
-          ))}
+      <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+        <SortableContext items={wordBank} strategy={rectSortingStrategy}>
+          <div className="word-bank">
+            {wordBank.map((word) => (
+              <DraggableWord key={word} id={word} word={word} />
+            ))}
+          </div>
         </SortableContext>
       </DndContext>
     </div>
   );
 }
-
-export default WorksheetPage;
