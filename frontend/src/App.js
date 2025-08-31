@@ -1,10 +1,9 @@
-// frontend/src/App.js
 import React, { useState } from "react";
-import { BrowserRouter as Router, Routes, Route, useNavigate } from "react-router-dom";
+import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
 import "./App.css";
-import WorksheetPage from "./WorksheetPage";
+import DragDropWorksheet from "./DragDropWorksheet";
 
-function Home() {
+function App() {
   const [file, setFile] = useState(null);
   const [level, setLevel] = useState("beginner");
   const [familiarity, setFamiliarity] = useState("once");
@@ -12,7 +11,6 @@ function Home() {
   const [bilingual, setBilingual] = useState(false);
   const [debug, setDebug] = useState(false);
   const [status, setStatus] = useState("");
-  const navigate = useNavigate();
 
   const handleGenerate = async (e) => {
     e.preventDefault();
@@ -40,11 +38,13 @@ function Home() {
       if (!response.ok) throw new Error(`Server error: ${response.status}`);
 
       if (outputFormat === "web") {
+        // Web output: get JSON
         const data = await response.json();
-        localStorage.setItem("worksheetData", JSON.stringify(data));
-        // ✅ client-side navigation (no server hit)
-        navigate("/worksheet");
+        localStorage.setItem("worksheetJSON", JSON.stringify(data.worksheet));
+        localStorage.setItem("wordBankJSON", JSON.stringify(data.word_bank));
+        window.location.href = "/worksheet"; // navigate to drag-and-drop page
       } else {
+        // PDF or DOCX download
         const blob = await response.blob();
         const contentDisposition = response.headers.get("content-disposition");
         let filename = "worksheet";
@@ -53,6 +53,7 @@ function Home() {
         } else {
           filename += `.${outputFormat}`;
         }
+
         const url = window.URL.createObjectURL(blob);
         const a = document.createElement("a");
         a.href = url;
@@ -71,78 +72,87 @@ function Home() {
   };
 
   return (
-    <div className="App">
-      <h1>Subtitle Worksheet Generator</h1>
-      <form onSubmit={handleGenerate}>
-        <div>
-          <label>Subtitle file:</label>
-          <input
-            type="file"
-            accept=".srt,.ass,.txt"
-            onChange={(e) => setFile(e.target.files[0])}
-            required
-          />
-        </div>
-        <div>
-          <label>Level:</label>
-          <select value={level} onChange={(e) => setLevel(e.target.value)}>
-            <option value="beginner">Beginner</option>
-            <option value="intermediate">Intermediate</option>
-          </select>
-        </div>
-        <div>
-          <label>Familiarity:</label>
-          <select value={familiarity} onChange={(e) => setFamiliarity(e.target.value)}>
-            <option value="once">Once</option>
-            <option value="twice">Twice</option>
-            <option value="more">More than twice</option>
-          </select>
-        </div>
-        <div>
-          <label>Output format:</label>
-          <select value={outputFormat} onChange={(e) => setOutputFormat(e.target.value)}>
-            <option value="pdf">PDF</option>
-            <option value="docx">DOCX</option>
-            <option value="web">Web</option>
-          </select>
-        </div>
-        <div>
-          <label>
-            <input
-              type="checkbox"
-              checked={bilingual}
-              onChange={(e) => setBilingual(e.target.checked)}
-            />
-            Bilingual
-          </label>
-        </div>
-        <div>
-          <label>
-            <input
-              type="checkbox"
-              checked={debug}
-              onChange={(e) => setDebug(e.target.checked)}
-            />
-            Debug
-          </label>
-        </div>
-        <button type="submit">Generate Worksheet</button>
-      </form>
-      <p>{status}</p>
-    </div>
-  );
-}
-
-export default function App() {
-  return (
     <Router>
       <Routes>
-        <Route path="/" element={<Home />} />
-        <Route path="/worksheet" element={<WorksheetPage />} />
+        <Route
+          path="/"
+          element={
+            <div className="App">
+              <h1>Subtitle Worksheet Generator</h1>
+              <form onSubmit={handleGenerate}>
+                <div>
+                  <label>Subtitle file:</label>
+                  <input
+                    type="file"
+                    accept=".srt,.ass,.txt"
+                    onChange={(e) => setFile(e.target.files[0])}
+                    required
+                  />
+                </div>
+                <div>
+                  <label>Level:</label>
+                  <select value={level} onChange={(e) => setLevel(e.target.value)}>
+                    <option value="beginner">Beginner</option>
+                    <option value="intermediate">Intermediate</option>
+                  </select>
+                </div>
+                <div>
+                  <label>Familiarity:</label>
+                  <select value={familiarity} onChange={(e) => setFamiliarity(e.target.value)}>
+                    <option value="once">Once</option>
+                    <option value="twice">Twice</option>
+                    <option value="more">More than twice</option>
+                  </select>
+                </div>
+                <div>
+                  <label>Output format:</label>
+                  <select value={outputFormat} onChange={(e) => setOutputFormat(e.target.value)}>
+                    <option value="pdf">PDF</option>
+                    <option value="docx">DOCX</option>
+                    <option value="web">Web</option>
+                  </select>
+                </div>
+                <div>
+                  <label>
+                    <input
+                      type="checkbox"
+                      checked={bilingual}
+                      onChange={(e) => setBilingual(e.target.checked)}
+                    />
+                    Bilingual
+                  </label>
+                </div>
+                <div>
+                  <label>
+                    <input
+                      type="checkbox"
+                      checked={debug}
+                      onChange={(e) => setDebug(e.target.checked)}
+                    />
+                    Debug
+                  </label>
+                </div>
+                <button type="submit">Generate Worksheet</button>
+              </form>
+              <p>{status}</p>
+            </div>
+          }
+        />
+        <Route
+          path="/worksheet"
+          element={
+            <DragDropWorksheet
+              worksheet={JSON.parse(localStorage.getItem("worksheetJSON"))}
+              wordBank={JSON.parse(localStorage.getItem("wordBankJSON"))}
+            />
+          }
+        />
       </Routes>
     </Router>
   );
 }
+
+export default App;
 
 
 
