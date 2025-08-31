@@ -1,143 +1,118 @@
-import React, { useState, useEffect } from "react";
+// frontend/src/DragDropWorksheet.js
+import React, { useState } from "react";
 import {
   DndContext,
   useDraggable,
   useDroppable,
   closestCenter,
-  DragOverlay,
+  PointerSensor,
+  useSensor,
+  useSensors,
 } from "@dnd-kit/core";
+import { arrayMove, SortableContext, sortableKeyboardCoordinates } from "@dnd-kit/sortable";
 
-// -----------------
-// Draggable word
-// -----------------
-function DraggableWord({ id, children }) {
-  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({ id });
+// Draggable word component
+function DraggableWord({ word }) {
+  const { attributes, listeners, setNodeRef, transform } = useDraggable({ id: word });
+
   const style = {
-    transform: transform ? `translate3d(${transform.x}px, ${transform.y}px, 0)` : undefined,
-    padding: "4px 8px",
-    margin: "4px",
-    backgroundColor: "#4caf50",
-    color: "#fff",
-    borderRadius: "4px",
+    transform: transform
+      ? `translate3d(${transform.x}px, ${transform.y}px, 0)`
+      : undefined,
     display: "inline-block",
+    padding: "4px 8px",
+    margin: "2px",
+    border: "1px solid #333",
+    borderRadius: "4px",
     cursor: "grab",
-    opacity: isDragging ? 0.5 : 1,
+    backgroundColor: "#f0f0f0",
   };
+
   return (
     <div ref={setNodeRef} style={style} {...listeners} {...attributes}>
-      {children}
+      {word}
     </div>
   );
 }
 
-// -----------------
-// Droppable blank
-// -----------------
-function DroppableBlank({ id, value, onDrop, correctWord }) {
-  const { isOver, setNodeRef } = useDroppable({ id });
-  const style = {
-    minWidth: "80px",
-    minHeight: "30px",
-    margin: "0 4px",
-    padding: "4px",
-    border: "2px dashed #999",
-    backgroundColor: isOver ? "#f0f0f0" : "#fff",
-    display: "inline-block",
-    verticalAlign: "middle",
-    textAlign: "center",
-  };
-
-  let feedbackColor = "";
-  if (value) {
-    feedbackColor = value === correctWord ? "#d4edda" : "#f8d7da";
-  }
+// Droppable blank component
+function Blank({ id, placedWord }) {
+  const { setNodeRef } = useDroppable({ id });
 
   return (
-    <div
+    <span
       ref={setNodeRef}
-      style={{ ...style, backgroundColor: feedbackColor }}
-      onDrop={(e) => onDrop(id, e)}
+      style={{
+        display: "inline-block",
+        minWidth: "60px",
+        borderBottom: "2px solid #333",
+        margin: "0 4px",
+        textAlign: "center",
+        padding: "0 4px",
+      }}
     >
-      {value || "_"}
-    </div>
+      {placedWord || "____"}
+    </span>
   );
 }
 
-// -----------------
-// Main component
-// -----------------
+// Main DragDropWorksheet component
 export default function DragDropWorksheet({ worksheet, wordBank }) {
-  // worksheet: array of sentences with blanks
-  // wordBank: array of words
+  // state: { blankId: word }
   const [placedWords, setPlacedWords] = useState({});
-  const [activeWord, setActiveWord] = useState(null);
 
-  useEffect(() => {
-    // reset when new worksheet is loaded
-    setPlacedWords({});
-  }, [worksheet]);
-
-  const handleDragStart = (event) => {
-    setActiveWord(event.active.id);
-  };
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
+  );
 
   const handleDragEnd = (event) => {
-    const { over } = event;
+    const { active, over } = event;
     if (over) {
-      setPlacedWords((prev) => ({
-        ...prev,
-        [over.id]: activeWord,
-      }));
+      setPlacedWords((prev) => ({ ...prev, [over.id]: active.id }));
     }
-    setActiveWord(null);
   };
 
+  // Render sentences, replacing blanks with Blank components
+  const renderedSentences = worksheet.map((sentence, si) => {
+    return (
+      <p key={si}>
+        {sentence.map((token, ti) => {
+          if (token.blankId) {
+            return (
+              <Blank
+                key={token.blankId}
+                id={token.blankId}
+                placedWord={placedWords[token.blankId]}
+              />
+            );
+          }
+          return <span key={ti}> {token.text} </span>;
+        })}
+      </p>
+    );
+  });
+
   return (
-    <DndContext
-      collisionDetection={closestCenter}
-      onDragStart={handleDragStart}
-      onDragEnd={handleDragEnd}
-    >
-      <div>
-        <h2>Word Bank</h2>
+    <div>
+      <h2>Drag and Drop Worksheet</h2>
+      <DndContext
+        sensors={sensors}
+        collisionDetection={closestCenter}
+        onDragEnd={handleDragEnd}
+      >
         <div>
+          {renderedSentences}
+        </div>
+
+        <h3>Word Bank</h3>
+        <div style={{ display: "flex", flexWrap: "wrap" }}>
           {wordBank.map((word) => (
-            <DraggableWord key={word} id={word}>
-              {word}
-            </DraggableWord>
+            <DraggableWord key={word} word={word} />
           ))}
         </div>
-
-        <h2>Sentences</h2>
-        <div>
-          {worksheet.map((sentence, si) => (
-            <p key={si}>
-              {sentence.words.map((word, wi) =>
-                word.isBlank ? (
-                  <DroppableBlank
-                    key={wi}
-                    id={`s${si}w${wi}`}
-                    value={placedWords[`s${si}w${wi}`]}
-                    onDrop={() => {}}
-                    correctWord={word.correct}
-                  />
-                ) : (
-                  <span key={wi}>{word.text} </span>
-                )
-              )}
-            </p>
-          ))}
-        </div>
-
-        <DragOverlay>
-          {activeWord ? (
-            <div style={{ padding: "4px 8px", backgroundColor: "#4caf50", color: "#fff" }}>
-              {activeWord}
-            </div>
-          ) : null}
-        </DragOverlay>
-      </div>
-    </DndContext>
+      </DndContext>
+    </div>
   );
 }
+
 

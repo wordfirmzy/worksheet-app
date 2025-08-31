@@ -6,6 +6,7 @@ import os
 import shutil
 import tempfile
 from typing import Optional
+import uuid
 
 import worksheet_generator  # your existing script (unchanged)
 
@@ -28,7 +29,6 @@ app.add_middleware(
 def _save_upload_to_temp(upload: UploadFile) -> str:
     """Save uploaded file to a secure temp path and return the path."""
     _, ext = os.path.splitext(upload.filename or "")
-    # Keep original extension to help any downstream logic
     tmp = tempfile.NamedTemporaryFile(delete=False, suffix=ext or ".tmp")
     with tmp as f:
         shutil.copyfileobj(upload.file, f)
@@ -39,7 +39,6 @@ def _cleanup(path: Optional[str]) -> None:
         try:
             os.remove(path)
         except Exception:
-            # Swallow cleanup errors
             pass
 
 # ----------------------------------------------------
@@ -92,11 +91,20 @@ async def generate(
 
         fmt = output_format.lower().strip()
         if fmt == "web":
-            # 4a) Return JSON for interactive frontends
+            # Add unique blank IDs for frontend drag-and-drop
+            structured_worksheet = []
+            for sent in worksheet:
+                structured_sentence = []
+                for token in sent:
+                    if token.get("is_blank"):
+                        token["blankId"] = str(uuid.uuid4())
+                    structured_sentence.append(token)
+                structured_worksheet.append(structured_sentence)
+
             return JSONResponse(
                 {
                     "message": "ok",
-                    "worksheet": worksheet,
+                    "worksheet": structured_worksheet,
                     "word_bank": word_bank,
                     "bilingual": bilingual,
                 }
@@ -118,7 +126,7 @@ async def generate(
             worksheet_generator.save_as_docx(out_tmp_path, worksheet, word_bank)
             download_name = "worksheet.docx"
 
-        # make sure we clean up the file after the response is sent
+        # clean up the file after the response is sent
         background_tasks.add_task(_cleanup, out_tmp_path)
 
         return FileResponse(
@@ -129,14 +137,8 @@ async def generate(
         )
 
     except HTTPException:
-        # re-raise FastAPI errors as-is
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to generate worksheet: {e}") from e
     finally:
-        # always remove the uploaded temp file
         _cleanup(src_path)
-
-
-
-
