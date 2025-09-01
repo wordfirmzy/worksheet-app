@@ -2,12 +2,13 @@
 from fastapi import FastAPI, UploadFile, File, Form, BackgroundTasks, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 import os
 import shutil
 import tempfile
 from typing import Optional
 
-import worksheet_generator  # your updated script
+import worksheet_generator  # your existing script
 
 app = FastAPI(title="Worksheet Backend", version="1.0.0")
 
@@ -21,6 +22,12 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# ----------------------------------------------------
+# Serve React build
+# ----------------------------------------------------
+if os.path.exists("frontend/build"):
+    app.mount("/", StaticFiles(directory="frontend/build", html=True), name="frontend")
 
 # ----------------------------------------------------
 # Helpers
@@ -54,64 +61,41 @@ def health():
 async def generate(
     background_tasks: BackgroundTasks,
     subtitle_file: UploadFile = File(...),
-
-    # core controls
     level: str = Form(...),            # "beginner" | "intermediate"
     familiarity: str = Form(...),      # "once" | "twice" | "more"
     output_format: str = Form(...),    # "pdf" | "docx" | "web"
-
-    # options
     bilingual: bool = Form(False),
     debug: bool = Form(False),
 ):
-    """
-    Returns:
-      - If output_format == 'pdf' or 'docx': a file download
-      - If output_format == 'web': JSON { worksheet: [...], word_bank: [...], bilingual: bool }
-    """
-    # 1) Save upload to a temp file
     src_path = _save_upload_to_temp(subtitle_file)
 
     try:
-        # 2) Parse + index
         sentences = worksheet_generator.parse_subtitles(src_path, bilingual_mode=bilingual)
         sentence_dict, word_index, freq_dict = worksheet_generator.build_dictionaries(sentences)
 
         if debug:
-            worksheet_generator.debug_output(sentences, freq_dict) if hasattr(worksheet_generator, "debug_output") else None
+            worksheet_generator.debug_output(sentences, freq_dict)
 
-        # 3) Filter + generate
         candidate_words = worksheet_generator.filter_words(
             freq_dict, familiarity.lower(), level.lower()
+        )
+        worksheet, word_bank = worksheet_generator.generate_worksheet(
+            sentence_dict, word_index, candidate_words, bilingual_mode=bilingual
         )
 
         fmt = output_format.lower().strip()
         if fmt == "web":
-            # 4a) Use interactive generator for drag-and-drop
-            worksheet, word_bank = worksheet_generator.generate_worksheet_interactive(
-                sentence_dict, word_index, candidate_words, bilingual_mode=bilingual
-            )
-            return JSONResponse(
-                {
-                    "message": "ok",
-                    "worksheet": worksheet,
-                    "word_bank": word_bank,
-                    "bilingual": bilingual,
-                }
-            )
+            return JSONResponse({
+                "message": "ok",
+                "worksheet": worksheet,
+                "word_bank": word_bank,
+                "bilingual": bilingual,
+            })
 
-        # 4b) Produce a file (PDF or DOCX)
-        out_suffix = ".pdf" if fmt == "pdf" else ".docx" if fmt == "docx" else None
-        if out_suffix is None:
-            raise HTTPException(status_code=400, detail="Invalid output_format. Use pdf | docx | web.")
-
+        out_suffix = ".pdf" if fmt == "pdf" else ".docx"
         out_tmp = tempfile.NamedTemporaryFile(delete=False, suffix=out_suffix)
         out_tmp_path = out_tmp.name
         out_tmp.close()
-
-        worksheet, word_bank = worksheet_generator.generate_worksheet(
-            sentence_dict, word_index, candidate_words, bilingual_mode=bilingual
-        )
 
         if fmt == "pdf":
             worksheet_generator.save_as_pdf(out_tmp_path, worksheet, word_bank)

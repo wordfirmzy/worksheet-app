@@ -1,61 +1,52 @@
-import React, { useEffect, useState } from "react";
-import { DndContext, useSensor, useSensors, PointerSensor } from "@dnd-kit/core";
-import {
-  sortableKeyboardCoordinates,
-  arrayMove,
-} from "@dnd-kit/sortable";
-import "./WorksheetPage.css";
+import React, { useState, useEffect } from "react";
+import { DndContext, closestCenter, PointerSensor, useSensor, useSensors } from "@dnd-kit/core";
+import { arrayMove, SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy } from "@dnd-kit/sortable";
+import SortableItem from "./SortableItem"; // small component for draggable word
 
 function WorksheetPage() {
   const [worksheet, setWorksheet] = useState([]);
   const [wordBank, setWordBank] = useState([]);
-  const [bilingual, setBilingual] = useState(false);
 
   useEffect(() => {
-    const data = JSON.parse(localStorage.getItem("worksheetData"));
-    if (data) {
-      setWorksheet(data.worksheet);
-      setWordBank(data.word_bank);
-      setBilingual(data.bilingual);
-    }
+    const data = JSON.parse(localStorage.getItem("worksheetData") || "{}");
+    setWorksheet(data.worksheet || []);
+    setWordBank(data.word_bank || []);
   }, []);
 
-  const sensors = useSensors(useSensor(PointerSensor));
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
+  );
 
-  // TODO: Implement drag-and-drop logic per sentence blanks
   const handleDragEnd = (event) => {
     const { active, over } = event;
-    if (!over) return;
-
-    // Simplified example: swap positions in wordBank
-    const oldIndex = wordBank.indexOf(active.id);
-    const newIndex = wordBank.indexOf(over.id);
-    setWordBank(arrayMove(wordBank, oldIndex, newIndex));
+    if (over && active.id !== over.id) {
+      setWordBank((items) => {
+        const oldIndex = items.indexOf(active.id);
+        const newIndex = items.indexOf(over.id);
+        return arrayMove(items, oldIndex, newIndex);
+      });
+    }
   };
 
   return (
-    <div className="worksheet-page">
-      <h1>Interactive Worksheet</h1>
-      <DndContext sensors={sensors} onDragEnd={handleDragEnd}>
-        <div className="sentences">
-          {worksheet.map((sentence, idx) => (
-            <p key={idx} dangerouslySetInnerHTML={{ __html: sentence }}></p>
-          ))}
-        </div>
-        <div className="word-bank">
-          <h2>Word Bank</h2>
-          <ul>
+    <div>
+      <h1>Drag-and-Drop Worksheet</h1>
+      <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+        <SortableContext items={wordBank} strategy={verticalListSortingStrategy}>
+          <div className="word-bank">
             {wordBank.map((word) => (
-              <li key={word} id={word}>
-                {word}
-              </li>
+              <SortableItem key={word} id={word} />
             ))}
-          </ul>
-        </div>
+          </div>
+        </SortableContext>
       </DndContext>
+      <div className="worksheet">
+        {worksheet.map((sentence, idx) => (
+          <p key={idx}>{sentence}</p>
+        ))}
+      </div>
     </div>
   );
 }
 
 export default WorksheetPage;
-

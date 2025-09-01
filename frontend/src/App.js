@@ -43,18 +43,10 @@ function App() {
         window.location.href = "/worksheet";
       } else {
         const blob = await response.blob();
-        const contentDisposition = response.headers.get("content-disposition");
-        let filename = "worksheet";
-        if (contentDisposition && contentDisposition.includes("filename=")) {
-          filename = contentDisposition.split("filename=")[1].replace(/['"]/g, "").trim();
-        } else {
-          filename += `.${outputFormat}`;
-        }
-
         const url = window.URL.createObjectURL(blob);
         const a = document.createElement("a");
         a.href = url;
-        a.download = filename;
+        a.download = `worksheet.${outputFormat}`;
         document.body.appendChild(a);
         a.click();
         a.remove();
@@ -111,21 +103,13 @@ function App() {
                 </div>
                 <div>
                   <label>
-                    <input
-                      type="checkbox"
-                      checked={bilingual}
-                      onChange={(e) => setBilingual(e.target.checked)}
-                    />
+                    <input type="checkbox" checked={bilingual} onChange={(e) => setBilingual(e.target.checked)} />
                     Bilingual
                   </label>
                 </div>
                 <div>
                   <label>
-                    <input
-                      type="checkbox"
-                      checked={debug}
-                      onChange={(e) => setDebug(e.target.checked)}
-                    />
+                    <input type="checkbox" checked={debug} onChange={(e) => setDebug(e.target.checked)} />
                     Debug
                   </label>
                 </div>
