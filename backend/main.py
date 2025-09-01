@@ -6,9 +6,8 @@ import os
 import shutil
 import tempfile
 from typing import Optional
-import traceback
 
-import worksheet_generator  # your existing script (unchanged)
+import worksheet_generator  # the updated worksheet_generator.py
 
 app = FastAPI(title="Worksheet Backend", version="1.0.0")
 
@@ -63,38 +62,34 @@ async def generate(
 ):
     """
     Returns:
-      - If output_format == 'pdf' or 'docx': a file download
-      - If output_format == 'web': JSON { worksheet: [...], word_bank: [...], bilingual: bool }
+      - PDF/DOCX: file download
+      - Web: JSON { worksheet: [...], word_bank: [...], bilingual: bool }
     """
     src_path = _save_upload_to_temp(subtitle_file)
 
     try:
-        # 1) Parse + index
+        # Parse and index subtitles
         sentences = worksheet_generator.parse_subtitles(src_path, bilingual_mode=bilingual)
         sentence_dict, word_index, freq_dict = worksheet_generator.build_dictionaries(sentences)
 
         if debug:
             worksheet_generator.debug_output(sentences, freq_dict)
 
-        # 2) Filter + generate
-        candidate_words = worksheet_generator.filter_words(
-            freq_dict, familiarity.lower(), level.lower()
-        )
-        worksheet, word_bank = worksheet_generator.generate_worksheet(
-            sentence_dict, word_index, candidate_words, bilingual_mode=bilingual
-        )
+        candidate_words = worksheet_generator.filter_words(freq_dict, familiarity.lower(), level.lower())
 
         fmt = output_format.lower().strip()
         if fmt == "web":
-            return JSONResponse(
-                {
-                    "message": "ok",
-                    "worksheet": worksheet,
-                    "word_bank": word_bank,
-                    "bilingual": bilingual,
-                }
+            worksheet, word_bank = worksheet_generator.generate_worksheet_web(
+                sentence_dict, word_index, candidate_words, bilingual_mode=bilingual
             )
+            return JSONResponse({
+                "message": "ok",
+                "worksheet": worksheet,
+                "word_bank": word_bank,
+                "bilingual": bilingual
+            })
 
+        # PDF or DOCX
         out_suffix = ".pdf" if fmt == "pdf" else ".docx" if fmt == "docx" else None
         if out_suffix is None:
             raise HTTPException(status_code=400, detail="Invalid output_format. Use pdf | docx | web.")
@@ -102,6 +97,10 @@ async def generate(
         out_tmp = tempfile.NamedTemporaryFile(delete=False, suffix=out_suffix)
         out_tmp_path = out_tmp.name
         out_tmp.close()
+
+        worksheet, word_bank = worksheet_generator.generate_worksheet(
+            sentence_dict, word_index, candidate_words, bilingual_mode=bilingual
+        )
 
         if fmt == "pdf":
             worksheet_generator.save_as_pdf(out_tmp_path, worksheet, word_bank)
@@ -119,10 +118,9 @@ async def generate(
             filename=download_name,
         )
 
+    except HTTPException:
+        raise
     except Exception as e:
-        print("=== ERROR IN /generate ===")
-        print(f"Exception: {e}")
-        traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Failed to generate worksheet: {e}") from e
     finally:
         _cleanup(src_path)

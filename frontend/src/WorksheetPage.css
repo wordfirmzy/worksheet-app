@@ -1,22 +1,32 @@
-/* WorksheetPage.css */
 .worksheet-page {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
   padding: 20px;
 }
 
-.sentence {
-  font-size: 18px;
-  margin-bottom: 12px;
+.worksheet-container {
+  display: flex;
+  gap: 40px;
+  width: 100%;
+  max-width: 1000px;
 }
 
-.blank {
-  display: inline-block;
-  width: 60px;
-  border-bottom: 2px solid #000;
-  margin: 0 4px;
+.sentences {
+  flex: 2;
+}
+
+.sentence {
+  margin-bottom: 12px;
+  padding: 8px;
+  background-color: #f1f1f1;
+  border-radius: 4px;
 }
 
 .word-bank {
-  display: flex;
-  flex-wrap: wrap;
-  margin-top: 16px;
+  flex: 1;
+  padding: 10px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  background-color: #fafafa;
 }
