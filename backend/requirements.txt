@@ -4,4 +4,4 @@ python-multipart
 reportlab
 python-docx
 chardet
-fdpf
+fpdf
