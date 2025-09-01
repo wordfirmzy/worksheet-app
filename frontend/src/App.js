@@ -1,7 +1,8 @@
 import React, { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { BrowserRouter as Router, Routes, Route, useNavigate } from "react-router-dom";
+import WorksheetPage from "./WorksheetPage"; // make sure this file exists
 
-function App() {
+function Home() {
   const [numWords, setNumWords] = useState(10);
   const [bilingualMode, setBilingualMode] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -12,30 +13,23 @@ function App() {
 
     try {
       const response = await fetch(
-        "https://worksheet-backend.onrender.com/", // 👈 change this to your Render backend URL
+        "https://worksheet-backend.onrender.com/generate", // Render backend URL
         {
           method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            num_words: numWords,
-            bilingual_mode: bilingualMode,
-          }),
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ num_words: numWords, bilingual_mode: bilingualMode }),
         }
       );
 
-      if (!response.ok) {
-        throw new Error(`Server error: ${response.status}`);
-      }
+      if (!response.ok) throw new Error(`Server error: ${response.status}`);
 
       const data = await response.json();
 
-      // Redirect to worksheet page with state
+      // Navigate to worksheet page with state
       navigate("/worksheet", { state: { worksheet: data.worksheet, word_bank: data.word_bank } });
     } catch (error) {
       console.error("Error generating worksheet:", error);
-      alert("Error generating worksheet. Please check the console for details.");
+      alert("Error generating worksheet. See console for details.");
     } finally {
       setLoading(false);
     }
@@ -73,6 +67,17 @@ function App() {
         {loading ? "Generating..." : "Generate Worksheet"}
       </button>
     </div>
+  );
+}
+
+function App() {
+  return (
+    <Router>
+      <Routes>
+        <Route path="/" element={<Home />} />
+        <Route path="/worksheet" element={<WorksheetPage />} />
+      </Routes>
+    </Router>
   );
 }
 
