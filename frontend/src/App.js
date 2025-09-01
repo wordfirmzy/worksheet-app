@@ -1,4 +1,3 @@
-// src/App.js
 import React, { useState } from "react";
 import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
 import "./App.css";
@@ -15,7 +14,10 @@ function App() {
 
   const handleGenerate = async (e) => {
     e.preventDefault();
-    if (!file) return alert("Please upload a subtitle file.");
+    if (!file) {
+      alert("Please upload a subtitle file.");
+      return;
+    }
 
     const formData = new FormData();
     formData.append("subtitle_file", file);
@@ -36,22 +38,30 @@ function App() {
       if (!response.ok) throw new Error(`Server error: ${response.status}`);
 
       if (outputFormat === "web") {
-        const json = await response.json();
-        localStorage.setItem("worksheetHTML", JSON.stringify(json));
+        const data = await response.json();
+        localStorage.setItem("worksheetData", JSON.stringify(data));
         window.location.href = "/worksheet";
       } else {
         const blob = await response.blob();
+        const contentDisposition = response.headers.get("content-disposition");
+        let filename = "worksheet";
+        if (contentDisposition && contentDisposition.includes("filename=")) {
+          filename = contentDisposition.split("filename=")[1].replace(/['"]/g, "").trim();
+        } else {
+          filename += `.${outputFormat}`;
+        }
+
         const url = window.URL.createObjectURL(blob);
         const a = document.createElement("a");
         a.href = url;
-        a.download = `worksheet.${outputFormat}`;
+        a.download = filename;
         document.body.appendChild(a);
         a.click();
         a.remove();
         window.URL.revokeObjectURL(url);
       }
 
-      setStatus("Worksheet generated!");
+      setStatus("Worksheet generated.");
     } catch (err) {
       console.error("Error generating worksheet:", err);
       setStatus("Error generating worksheet. See console for details.");
@@ -67,29 +77,58 @@ function App() {
             <div className="App">
               <h1>Subtitle Worksheet Generator</h1>
               <form onSubmit={handleGenerate}>
-                <input type="file" accept=".srt,.ass,.txt" onChange={(e) => setFile(e.target.files[0])} required />
-                <select value={level} onChange={(e) => setLevel(e.target.value)}>
-                  <option value="beginner">Beginner</option>
-                  <option value="intermediate">Intermediate</option>
-                </select>
-                <select value={familiarity} onChange={(e) => setFamiliarity(e.target.value)}>
-                  <option value="once">Once</option>
-                  <option value="twice">Twice</option>
-                  <option value="more">More than twice</option>
-                </select>
-                <select value={outputFormat} onChange={(e) => setOutputFormat(e.target.value)}>
-                  <option value="pdf">PDF</option>
-                  <option value="docx">DOCX</option>
-                  <option value="web">Web</option>
-                </select>
-                <label>
-                  <input type="checkbox" checked={bilingual} onChange={(e) => setBilingual(e.target.checked)} />
-                  Bilingual
-                </label>
-                <label>
-                  <input type="checkbox" checked={debug} onChange={(e) => setDebug(e.target.checked)} />
-                  Debug
-                </label>
+                <div>
+                  <label>Subtitle file:</label>
+                  <input
+                    type="file"
+                    accept=".srt,.ass,.txt"
+                    onChange={(e) => setFile(e.target.files[0])}
+                    required
+                  />
+                </div>
+                <div>
+                  <label>Level:</label>
+                  <select value={level} onChange={(e) => setLevel(e.target.value)}>
+                    <option value="beginner">Beginner</option>
+                    <option value="intermediate">Intermediate</option>
+                  </select>
+                </div>
+                <div>
+                  <label>Familiarity:</label>
+                  <select value={familiarity} onChange={(e) => setFamiliarity(e.target.value)}>
+                    <option value="once">Once</option>
+                    <option value="twice">Twice</option>
+                    <option value="more">More than twice</option>
+                  </select>
+                </div>
+                <div>
+                  <label>Output format:</label>
+                  <select value={outputFormat} onChange={(e) => setOutputFormat(e.target.value)}>
+                    <option value="pdf">PDF</option>
+                    <option value="docx">DOCX</option>
+                    <option value="web">Web</option>
+                  </select>
+                </div>
+                <div>
+                  <label>
+                    <input
+                      type="checkbox"
+                      checked={bilingual}
+                      onChange={(e) => setBilingual(e.target.checked)}
+                    />
+                    Bilingual
+                  </label>
+                </div>
+                <div>
+                  <label>
+                    <input
+                      type="checkbox"
+                      checked={debug}
+                      onChange={(e) => setDebug(e.target.checked)}
+                    />
+                    Debug
+                  </label>
+                </div>
                 <button type="submit">Generate Worksheet</button>
               </form>
               <p>{status}</p>
@@ -103,9 +142,3 @@ function App() {
 }
 
 export default App;
-
-
-
-
-
-
