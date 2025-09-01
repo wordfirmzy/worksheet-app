@@ -12,7 +12,7 @@ function App() {
 
     try {
       const response = await fetch(
-        "https://your-backend.onrender.com/generate_web", // 👈 change this to your Render backend URL
+        "https://worksheet-backend.onrender.com/", // 👈 change this to your Render backend URL
         {
           method: "POST",
           headers: {
