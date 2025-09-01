@@ -1,86 +1,127 @@
-import random
+# worksheet_generator.py
 import re
+import random
+import os
+from collections import defaultdict
+from docx import Document
+from fpdf import FPDF
 
-# ----------------------------------------------------
-# Regex for detecting Chinese characters
-# ----------------------------------------------------
-CHINESE_RE = re.compile(r'[\u4e00-\u9fff]')
+# ---------------------------
+# Configuration / regexes
+# ---------------------------
+CJK_RE = re.compile(r'[\u4e00-\u9fff]')
+CHINESE_RE = CJK_RE
+CJK_PUNCT_RE = r'！？。；，、：“”‘’（）《》【】'
 
-# ----------------------------------------------------
-# Parse subtitles
-# ----------------------------------------------------
+# Common abbreviations that should not be treated as sentence ends
+ABBREVIATIONS = [
+    "Mr.", "Mrs.", "Dr.", "St.", "Prof.", "Inc.", "Ltd.", "Jr.", "Sr.", "vs."
+]
+
+# ---------------------------
+# Subtitle Parsing
+# ---------------------------
 def parse_subtitles(file_path, bilingual_mode=False):
-    """
-    Reads a subtitle file (.srt, .ass, .txt) and returns a list of sentences.
-    """
-    sentences = []
+    """Reads subtitle file and returns cleaned sentences."""
     with open(file_path, "r", encoding="utf-8") as f:
-        content = f.read()
+        raw_text = f.read()
 
-    # Simplest split by newlines
-    for line in content.splitlines():
+    # Simple line split (extend for .ass/.srt as needed)
+    lines = raw_text.splitlines()
+    sentences = []
+    for line in lines:
         line = line.strip()
         if not line:
             continue
-        # Optionally remove Chinese characters for monolingual mode
-        if not bilingual_mode:
-            line = CHINESE_RE.sub("", line)
-        sentences.append(line)
+        line = clean_sentence(line)
+        if line:
+            sentences.append(line)
     return sentences
 
-# ----------------------------------------------------
-# Build word index + frequency dictionaries
-# ----------------------------------------------------
+# ---------------------------
+# Cleaning
+# ---------------------------
+def clean_sentence(text):
+    """Strip unwanted punctuation, handle abbreviations, etc."""
+    # Remove orphaned Chinese punctuation
+    text = re.sub(rf'^[{CJK_PUNCT_RE}]+|[{CJK_PUNCT_RE}]+$', '', text)
+
+    # Protect abbreviations from being split as sentence ends
+    for abbr in ABBREVIATIONS:
+        text = text.replace(abbr, abbr.replace('.', '§'))
+
+    # Optionally more cleaning here
+
+    # Restore abbreviations
+    text = text.replace('§', '.')
+
+    return text
+
+# ---------------------------
+# Dictionary building
+# ---------------------------
 def build_dictionaries(sentences):
     """
     Returns:
-      - sentence_dict: {id: sentence}
-      - word_index: {word: [sentence_ids]}
-      - freq_dict: {word: count}
+        - sentence_dict: {id: sentence}
+        - word_index: {word: [sentence_ids]}
+        - freq_dict: {word: frequency}
     """
     sentence_dict = {}
-    word_index = {}
-    freq_dict = {}
-    for idx, sentence in enumerate(sentences):
-        sentence_dict[idx] = sentence
-        words = re.findall(r"\b\w+\b", sentence)
-        for word in words:
-            lw = word.lower()
-            freq_dict[lw] = freq_dict.get(lw, 0) + 1
-            word_index.setdefault(lw, []).append(idx)
+    word_index = defaultdict(list)
+    freq_dict = defaultdict(int)
+
+    for idx, sent in enumerate(sentences):
+        sentence_dict[idx] = sent
+        words = re.findall(r'\b\w+\b', sent)
+        for w in words:
+            w_clean = w.lower()
+            word_index[w_clean].append(idx)
+            freq_dict[w_clean] += 1
+
     return sentence_dict, word_index, freq_dict
 
-# ----------------------------------------------------
-# Filter words based on familiarity and level
-# ----------------------------------------------------
-def filter_words(freq_dict, familiarity="once", level="beginner"):
-    """
-    Returns a list of candidate words.
-    """
-    # Simple example rules; adjust as needed
-    min_count = {"once": 1, "twice": 2, "more": 3}.get(familiarity, 1)
-    candidates = [w for w, c in freq_dict.items() if c >= min_count]
+# ---------------------------
+# Word filtering
+# ---------------------------
+def filter_words(freq_dict, familiarity='once', level='beginner'):
+    """Return candidate words based on frequency and level."""
+    # This is a placeholder, extend with your logic
+    filtered = []
+    for w, freq in freq_dict.items():
+        if familiarity == 'once' and freq == 1:
+            filtered.append(w)
+        elif familiarity == 'twice' and freq == 2:
+            filtered.append(w)
+        elif familiarity == 'more' and freq > 2:
+            filtered.append(w)
+    return filtered
 
-    if level == "beginner":
-        candidates = [w for w in candidates if len(w) <= 6]
-    elif level == "intermediate":
-        candidates = [w for w in candidates if len(w) > 3]
+# ---------------------------
+# PDF / DOCX generation
+# ---------------------------
+def save_as_pdf(output_path, worksheet, word_bank):
+    pdf = FPDF()
+    pdf.add_page()
+    pdf.set_font("Arial", size=12)
+    pdf.multi_cell(0, 10, "Worksheet\n\n")
+    for line in worksheet:
+        pdf.multi_cell(0, 10, line)
+        pdf.ln(2)
+    pdf.multi_cell(0, 10, "\nWord Bank:\n" + ", ".join(word_bank))
+    pdf.output(output_path)
 
-    return candidates
+def save_as_docx(output_path, worksheet, word_bank):
+    doc = Document()
+    doc.add_heading("Worksheet", 0)
+    for line in worksheet:
+        doc.add_paragraph(line)
+    doc.add_paragraph("\nWord Bank:\n" + ", ".join(word_bank))
+    doc.save(output_path)
 
-# ----------------------------------------------------
-# Debug output
-# ----------------------------------------------------
-def debug_output(sentences, freq_dict):
-    with open("debug_sentences.txt", "w", encoding="utf-8") as f:
-        f.write("\n".join(sentences))
-    with open("debug_frequencies.txt", "w", encoding="utf-8") as f:
-        for word, count in sorted(freq_dict.items(), key=lambda x: -x[1]):
-            f.write(f"{word}: {count}\n")
-
-# ----------------------------------------------------
-# Generate worksheet (PDF/DOCX)
-# ----------------------------------------------------
+# ---------------------------
+# Worksheet generation (PDF/DOCX)
+# ---------------------------
 def generate_worksheet(sentence_dict, word_index, word_list, num_words=12, bilingual_mode=False):
     chosen_words = random.sample(word_list, min(num_words, len(word_list)))
     worksheet = []
@@ -104,21 +145,17 @@ def generate_worksheet(sentence_dict, word_index, word_list, num_words=12, bilin
         if bilingual_mode:
             parts = re.split(f"({CHINESE_RE.pattern})", blanked)
             new_parts = []
-            blanked_once = False
             for token in parts:
                 if CHINESE_RE.search(token):
                     new_parts.append(token)
                 else:
-                    if not blanked_once:
-                        pattern = re.compile(rf"(?<!\w){re.escape(word)}(?!\w)", re.IGNORECASE)
-                        token, count = pattern.subn("________________________", token, count=1)
-                        if count > 0:
-                            blanked_once = True
+                    pattern = re.compile(rf"(?<!\w){re.escape(word)}(?!\w)", re.IGNORECASE)
+                    token = pattern.sub("________________________", token)
                     new_parts.append(token)
             blanked = ''.join(new_parts)
         else:
             pattern = re.compile(rf"(?<!\w){re.escape(word)}(?!\w)", re.IGNORECASE)
-            blanked = pattern.sub("________________________", blanked, count=1)
+            blanked = pattern.sub("________________________", blanked)
 
         worksheet.append(blanked)
         word_bank.append(word)
@@ -127,45 +164,55 @@ def generate_worksheet(sentence_dict, word_index, word_list, num_words=12, bilin
     random.shuffle(word_bank)
     return worksheet, word_bank
 
-# ----------------------------------------------------
-# Generate worksheet for web (drag-and-drop)
-# ----------------------------------------------------
-def generate_worksheet_web(sentence_dict, word_index, word_list, num_words=12, bilingual_mode=False):
+# ---------------------------
+# Interactive Web Output
+# ---------------------------
+def generate_worksheet_interactive(sentence_dict, word_index, word_list, num_words=12, bilingual_mode=False):
     """
-    Returns a data structure for interactive web output:
-      - worksheet: list of sentences with blanks
-      - word_bank: list of words to drag
+    Returns:
+        - worksheet: list of sentences with one blank per target word
+        - word_bank: list of words to drag
     """
-    return generate_worksheet(sentence_dict, word_index, word_list, num_words, bilingual_mode)
+    chosen_words = random.sample(word_list, min(num_words, len(word_list)))
+    worksheet = []
+    word_bank = []
+    used_sentences = set()
 
-# ----------------------------------------------------
-# Save as PDF
-# ----------------------------------------------------
-def save_as_pdf(file_path, worksheet, word_bank):
-    from reportlab.lib.pagesizes import letter
-    from reportlab.pdfgen import canvas
+    for word in chosen_words:
+        if word not in word_index:
+            continue
+        sentence_ids = word_index[word]
+        if not sentence_ids:
+            continue
+        available_sids = [sid for sid in sentence_ids if sid not in used_sentences]
+        if not available_sids:
+            word_bank.append(word)
+            continue
+        sid = random.choice(available_sids)
+        sentence = sentence_dict[sid]
 
-    c = canvas.Canvas(file_path, pagesize=letter)
-    width, height = letter
-    y = height - 50
+        # Only blank **one occurrence** of the target word
+        def blank_once(match):
+            return "________________________"
 
-    c.setFont("Helvetica", 12)
-    for line in worksheet:
-        c.drawString(50, y, line)
-        y -= 20
-        if y < 50:
-            c.showPage()
-            y = height - 50
-    c.showPage()
-    c.save()
+        if bilingual_mode:
+            parts = re.split(f"({CHINESE_RE.pattern})", sentence)
+            new_parts = []
+            for token in parts:
+                if CHINESE_RE.search(token):
+                    new_parts.append(token)
+                else:
+                    pattern = re.compile(rf"(?<!\w){re.escape(word)}(?!\w)", re.IGNORECASE)
+                    token = pattern.sub(blank_once, token, count=1)
+                    new_parts.append(token)
+            blanked = ''.join(new_parts)
+        else:
+            pattern = re.compile(rf"(?<!\w){re.escape(word)}(?!\w)", re.IGNORECASE)
+            blanked = pattern.sub(blank_once, sentence, count=1)
 
-# ----------------------------------------------------
-# Save as DOCX
-# ----------------------------------------------------
-def save_as_docx(file_path, worksheet, word_bank):
-    from docx import Document
+        worksheet.append(blanked)
+        word_bank.append(word)
+        used_sentences.add(sid)
 
-    doc = Document()
-    for line in worksheet:
-        doc.add_paragraph(line)
-    doc.save(file_path)
+    random.shuffle(word_bank)
+    return worksheet, word_bank
