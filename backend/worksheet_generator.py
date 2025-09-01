@@ -4,6 +4,8 @@ import sys
 import chardet
 import os
 from collections import defaultdict, Counter
+
+# PDF / DOCX output
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.pdfbase import pdfmetrics
@@ -13,20 +15,31 @@ from docx import Document
 from docx.shared import Pt
 
 # -------------------------------
-# Token regex (supports hyphens/apostrophes)
+# Regex constants
 # -------------------------------
+# English tokens incl. hyphens/apostrophes (don’t split contractions or hyphenated words)
 TOKEN_RE = re.compile(r"\b[a-zA-Z]+(?:[-'][a-zA-Z]+)*\b")
-CHINESE_RE = re.compile(r'[\u4e00-\u9fff]')
-# full-width CJK punctuation
-CJK_PUNCT_RE = r'[\u3000-\u303F（）【】「」『』《》]'
 
-# -------------------------------
-# Common abbreviations (lowercase, no period)
-# -------------------------------
+# CJK unified ideographs (Chinese)
+CHINESE_RE = re.compile(r'[\u4e00-\u9fff]')
+
+# Common CJK punctuation as a plain string (NOT a class) so we can escape safely later
+CJK_PUNCT_CHARS = "，、。？！：；（）【】「」『』《》—…·"
+
+# Abbreviations to protect during sentence splitting
 ABBREVIATIONS = {
-    "mr.", "mrs.", "dr.", "st.", "prof.", "jr.", "sr.", "ms.",
-    "etc.", "vs.", "e.g.", "i.e.", "u.s.", "u.k.", "a.m.", "p.m."
+    # titles
+    "mr", "mrs", "ms", "dr", "prof", "sr", "jr",
+    # places/things
+    "st", "no", "fig", "dept",
+    # latinisms
+    "etc", "i.e", "e.g", "al",
+    # times
+    "a.m", "p.m",
+    # countries
+    "u.s", "u.s.a", "u.k"
 }
+ABBR_RE = re.compile(r'\b(' + '|'.join(map(re.escape, ABBREVIATIONS)) + r')\.', re.IGNORECASE)
 
 # -------------------------------
 # Encoding-safe file reader
@@ -49,27 +62,76 @@ def read_file_safely(file_path):
 # Clean subtitle dialogue text
 # -------------------------------
 def clean_dialogue_text(text: str) -> str:
+    # remove {\tags} and <tags>
     text = re.sub(r"\{.*?\}", "", text)
     text = re.sub(r"<.*?>", "", text)
+    # ASS/SRT line breaks and non-breaking spaces
     text = text.replace("\\N", " ").replace("\\n", " ").replace("\\h", " ")
     text = text.replace("\u00A0", " ")
+    # directional/invisible control chars
     text = re.sub(r"[\u200B-\u200F\u202A-\u202E\u2060-\u206F]", "", text)
+    # ASCII control chars
     text = re.sub(r"[\u0000-\u001F\u007F-\u009F]", " ", text)
+    # collapse spaces
     text = re.sub(r"\s+", " ", text).strip()
     return text
 
 # -------------------------------
-# Remove Chinese text and orphaned punctuation
+# Remove Chinese and orphaned punctuation
 # -------------------------------
 def remove_chinese(text: str) -> str:
-    # Remove Chinese characters
+    # Remove CJK characters
     text = CHINESE_RE.sub("", text)
-    # Remove empty bracket/parentheses pairs
-    text = re.sub(r'[\(\[\{（『「【《]\s*[\)\]\}）』」】》]', '', text)
-    # Remove dangling punctuation at start/end
-    strip_chars = re.escape('（）【】「」『』《》()[]{}"\'‘’“”')
-    text = re.sub(rf'^[{strip_chars}]+|[{strip_chars}]+$', '', text)
-    return text.strip()
+
+    # Remove empty paired punctuation like (), [], {}, and their CJK equivalents if only whitespace remains inside
+    text = re.sub(r'(\(|\{|\[|（|「|『|【|《)\s*(\)|\}|\]|）|」|』|】|》)', '', text)
+
+    # Build a safe character class for trimming leading/trailing punctuation + quotes/braces
+    strip_chars = CJK_PUNCT_CHARS + '()[]{}"\''
+    cls = re.escape(strip_chars)
+    text = re.sub(rf'^[{cls}\s]+|[{cls}\s]+$', '', text)
+
+    # collapse spaces again
+    text = re.sub(r"\s+", " ", text).strip()
+    return text
+
+# -------------------------------
+# Protect abbreviations in a blob of text
+# -------------------------------
+def _protect_abbreviations(s: str) -> str:
+    # Replace trailing period after known abbreviations with a sentinel to avoid sentence split
+    return ABBR_RE.sub(lambda m: m.group(1) + "∯", s)
+
+def _restore_abbreviations(s: str) -> str:
+    return s.replace("∯", ".")
+
+# -------------------------------
+# Sentence splitting (join small fragments across lines)
+# -------------------------------
+def split_into_sentences(lines, min_words=5, max_words=30):
+    sentences = []
+    buffer = ""
+    for line in lines:
+        if buffer:
+            buffer += " " + line
+        else:
+            buffer = line
+
+        protected = _protect_abbreviations(buffer)
+        parts = re.split(r'(?<=[.!?])\s+(?=[A-Z0-9])', protected)
+
+        for s in parts[:-1]:
+            s = _restore_abbreviations(s).strip()
+            wc = len(TOKEN_RE.findall(s))
+            if min_words <= wc <= max_words:
+                sentences.append(s)
+
+        buffer = _restore_abbreviations(parts[-1])
+
+    buffer = buffer.strip()
+    if buffer and min_words <= len(TOKEN_RE.findall(buffer)) <= max_words:
+        sentences.append(buffer)
+    return sentences
 
 # -------------------------------
 # Subtitle parsing
@@ -81,82 +143,48 @@ def parse_subtitles(file_path, bilingual_mode=False):
         line = raw.strip()
         if not line:
             continue
+
+        # Extract text field from .ass Dialogue rows
         if line.startswith("Dialogue:"):
             parts = line.split(",", 9)
             if len(parts) > 9:
                 line = parts[9]
             else:
                 continue
+
+        # Skip style and format lines
         if line.lower().startswith(("format:", "style:", "script info", "playres")):
             continue
+
         line = clean_dialogue_text(line)
+
         if not bilingual_mode:
             line = remove_chinese(line)
+
         if line:
             lines.append(line)
+
     return split_into_sentences(lines)
-    
-# -------------------------------
-# Sentence splitting with robust abbreviation handling
-# -------------------------------
-def split_into_sentences(lines, min_words=5, max_words=30):
-    sentences = []
-    buffer = ""
-    # regex for potential sentence breaks (period, ?, ! followed by space + capital)
-    sentence_end_re = re.compile(r'([.!?])\s+')
-    
-    for line in lines:
-        if buffer:
-            buffer += " " + line
-        else:
-            buffer = line
-
-        start = 0
-        for match in sentence_end_re.finditer(buffer):
-            end = match.end()
-            candidate = buffer[start:end].strip()
-
-            # get the last token before punctuation
-            tokens = candidate.split()
-            last_token = tokens[-1].lower() if tokens else ""
-            
-            # if the last token is an abbreviation, skip splitting
-            if last_token in ABBREVIATIONS:
-                continue
-
-            word_count = len(TOKEN_RE.findall(candidate))
-            if min_words <= word_count <= max_words:
-                sentences.append(candidate)
-            start = end
-
-        # remaining text after last match
-        buffer = buffer[start:].strip()
-
-    # process any leftover buffer
-    if buffer:
-        word_count = len(TOKEN_RE.findall(buffer))
-        if min_words <= word_count <= max_words:
-            sentences.append(buffer)
-
-    return sentences
 
 # -------------------------------
 # Build dictionaries
 # -------------------------------
 def build_dictionaries(sentences):
-    sentence_dict = {i+1: s for i, s in enumerate(sentences)}
+    sentence_dict = {i + 1: s for i, s in enumerate(sentences)}
     word_index = defaultdict(list)
     all_words = []
+
     for sid, sentence in sentence_dict.items():
         words = TOKEN_RE.findall(sentence.lower())
         for w in words:
             word_index[w].append(sid)
         all_words.extend(words)
+
     freq_dict = Counter(all_words)
     return sentence_dict, word_index, freq_dict
 
 # -------------------------------
-# Load common words for levels
+# Load common words per level
 # -------------------------------
 def load_common_words(level):
     level_files = {
@@ -172,33 +200,37 @@ def load_common_words(level):
         return set()
 
 # -------------------------------
-# Filter words (handle contractions carefully)
+# Filter words (frequency + common word lists + gentle contraction handling)
 # -------------------------------
 def filter_words(freq_dict, familiarity, level):
     once = [w for w, f in freq_dict.items() if f == 1]
     twice = [w for w, f in freq_dict.items() if f == 2]
     more = [w for w, f in freq_dict.items() if f > 2]
+
     if familiarity == "once":
         words = once
     elif familiarity == "twice":
         words = twice
     else:
         words = more
+
     common_words = load_common_words(level)
+
     filtered = []
     for w in words:
         if w in common_words:
             continue
-        # if word contains an apostrophe, check base part against filter
+        # If contraction, also check the base before apostrophe
         if "'" in w:
             base = w.split("'")[0]
             if base in common_words:
                 continue
         filtered.append(w)
+
     return filtered
 
 # -------------------------------
-# Generate worksheet
+# Generate printable worksheet (PDF/DOCX workflow)
 # -------------------------------
 def generate_worksheet(sentence_dict, word_index, word_list, num_words=12, bilingual_mode=False):
     chosen_words = random.sample(word_list, min(num_words, len(word_list)))
@@ -212,34 +244,96 @@ def generate_worksheet(sentence_dict, word_index, word_list, num_words=12, bilin
         sentence_ids = word_index[word]
         if not sentence_ids:
             continue
+
         available_sids = [sid for sid in sentence_ids if sid not in used_sentences]
         if not available_sids:
             word_bank.append(word)
             continue
+
         sid = random.choice(available_sids)
         sentence = sentence_dict[sid]
         blanked = sentence
 
         if bilingual_mode:
-            # Split by Chinese characters
+            # Keep Chinese parts; only blank the target English word
             parts = re.split(f"({CHINESE_RE.pattern})", blanked)
             new_parts = []
             for token in parts:
                 if CHINESE_RE.search(token):
-                    # Keep Chinese text
                     new_parts.append(token)
                 else:
-                    # Only blank the target word, keep other English words
                     pattern = re.compile(rf"(?<!\w){re.escape(word)}(?!\w)", re.IGNORECASE)
                     token = pattern.sub("________________________", token)
                     new_parts.append(token)
             blanked = ''.join(new_parts)
         else:
-            # Non-bilingual: blank the target word
             pattern = re.compile(rf"(?<!\w){re.escape(word)}(?!\w)", re.IGNORECASE)
             blanked = pattern.sub("________________________", blanked)
 
         worksheet.append(blanked)
+        word_bank.append(word)
+        used_sentences.add(sid)
+
+    random.shuffle(word_bank)
+    return worksheet, word_bank
+
+# -------------------------------
+# Generate web (drag-and-drop) worksheet JSON
+# -------------------------------
+def generate_worksheet_web(sentence_dict, word_index, word_list, num_words=12, bilingual_mode=False):
+    """
+    Returns (worksheet, word_bank):
+      - worksheet: list[list[ token ]], where token = { "text": str, "is_blank": bool, "id"?: int }
+      - word_bank: list[str] (shuffled)
+    Multiple blanks per sentence are supported if the chosen word appears multiple times.
+    """
+    chosen_words = random.sample(word_list, min(num_words, len(word_list)))
+    worksheet = []
+    word_bank = []
+    used_sentences = set()
+    blank_id = 0
+
+    for word in chosen_words:
+        if word not in word_index:
+            continue
+        sentence_ids = word_index[word]
+        if not sentence_ids:
+            continue
+
+        available_sids = [sid for sid in sentence_ids if sid not in used_sentences]
+        if not available_sids:
+            word_bank.append(word)
+            continue
+
+        sid = random.choice(available_sids)
+        sentence = sentence_dict[sid]
+        token_list = []
+
+        if bilingual_mode:
+            parts = re.split(f"({CHINESE_RE.pattern})", sentence)
+            for token in parts:
+                if CHINESE_RE.search(token):
+                    token_list.append({"text": token, "is_blank": False})
+                else:
+                    pattern = re.compile(rf"(?<!\w){re.escape(word)}(?!\w)", re.IGNORECASE)
+                    segments = pattern.split(token)
+                    for i, seg in enumerate(segments):
+                        if seg:
+                            token_list.append({"text": seg, "is_blank": False})
+                        if i < len(segments) - 1:
+                            token_list.append({"text": word, "is_blank": True, "id": blank_id})
+                            blank_id += 1
+        else:
+            pattern = re.compile(rf"(?<!\w){re.escape(word)}(?!\w)", re.IGNORECASE)
+            segments = pattern.split(sentence)
+            for i, seg in enumerate(segments):
+                if seg:
+                    token_list.append({"text": seg, "is_blank": False})
+                if i < len(segments) - 1:
+                    token_list.append({"text": word, "is_blank": True, "id": blank_id})
+                    blank_id += 1
+
+        worksheet.append(token_list)
         word_bank.append(word)
         used_sentences.add(sid)
 
@@ -252,22 +346,25 @@ def generate_worksheet(sentence_dict, word_index, word_list, num_words=12, bilin
 def save_as_pdf(filename, worksheet, word_bank):
     doc = SimpleDocTemplate(filename)
     styles = getSampleStyleSheet()
-    font_path = os.path.join(os.path.dirname(__file__), "fonts", "Taipei Sans TC Beta Regular.ttf")
+
+    # Use local CJK font if available
+    font_path = os.path.join(os.path.dirname(__file__), "fonts", "NotoSerifCJKsc-VF.ttf")
     if os.path.exists(font_path):
-        pdfmetrics.registerFont(TTFont("TaipeiSans", font_path))
+        pdfmetrics.registerFont(TTFont("NotoSerifCJK", font_path))
         styles.add(ParagraphStyle(
             name="CJKNormal",
             parent=styles["Normal"],
-            fontName="TaipeiSans",
+            fontName="NotoSerifCJK",
             fontSize=12,
             leading=18,
             leftIndent=15,
             firstLineIndent=-15
         ))
+        # separate style for word bank (no hanging indent)
         styles.add(ParagraphStyle(
             name="CJKNormalNoIndent",
             parent=styles["Normal"],
-            fontName="TaipeiSans",
+            fontName="NotoSerifCJK",
             fontSize=12,
             leading=18
         ))
@@ -280,12 +377,15 @@ def save_as_pdf(filename, worksheet, word_bank):
 
     story = []
     story.append(Paragraph("Worksheet", styles["Heading1"]))
+
     for i, s in enumerate(worksheet, 1):
         numbered_text = f"{i}. {s}"
         story.append(Paragraph(numbered_text, styles[cjk_style]))
         story.append(Spacer(1, 12))
+
     story.append(Paragraph("Word Bank", styles["Heading2"]))
     story.append(Paragraph(", ".join(word_bank), styles[cjk_wordbank_style]))
+
     doc.build(story)
 
 # -------------------------------
@@ -295,13 +395,15 @@ def save_as_docx(filename, worksheet, word_bank):
     doc = Document()
     for i, s in enumerate(worksheet, 1):
         p = doc.add_paragraph()
-        run = p.add_run(f"{i}.\t{s}")
+        p.add_run(f"{i}.\t{s}")
         p.paragraph_format.line_spacing = Pt(18)
+
     doc.add_heading("Word Bank", level=2)
     p = doc.add_paragraph(", ".join(word_bank))
     p.paragraph_format.line_spacing = Pt(18)
     p.paragraph_format.left_indent = None
     p.paragraph_format.first_line_indent = None
+
     doc.save(filename)
 
 # -------------------------------
@@ -317,7 +419,7 @@ def debug_output(sentences, freq_dict):
     print("Debug files written: debug_sentences.txt, debug_frequencies.txt")
 
 # -------------------------------
-# Main
+# CLI entry (optional)
 # -------------------------------
 def main():
     if len(sys.argv) < 5:
@@ -337,8 +439,11 @@ def main():
     if debug:
         debug_output(sentences, freq_dict)
 
+    # For CLI, stick to PDF/DOCX like before
     candidate_words = filter_words(freq_dict, familiarity, level)
-    worksheet, word_bank = generate_worksheet(sentence_dict, word_index, candidate_words, bilingual_mode=bilingual_mode)
+    worksheet, word_bank = generate_worksheet(
+        sentence_dict, word_index, candidate_words, bilingual_mode=bilingual_mode
+    )
 
     if output_format == "pdf":
         save_as_pdf("worksheet.pdf", worksheet, word_bank)
