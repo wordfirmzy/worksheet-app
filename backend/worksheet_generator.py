@@ -170,13 +170,14 @@ def generate_worksheet(sentence_dict, word_index, word_list, num_words=12, bilin
 def generate_worksheet_interactive(sentence_dict, word_index, word_list, num_words=12, bilingual_mode=False):
     """
     Returns:
-        - worksheet: list of sentences with one blank per target word
-        - word_bank: list of words to drag
+        - sentences_html: list of HTML strings, each sentence with <span class='blank' data-id='X'>...</span>
+        - word_bank: list of words for drag-and-drop
     """
     chosen_words = random.sample(word_list, min(num_words, len(word_list)))
-    worksheet = []
+    sentences_html = []
     word_bank = []
     used_sentences = set()
+    blank_counter = 0  # unique ID for each blank
 
     for word in chosen_words:
         if word not in word_index:
@@ -184,35 +185,43 @@ def generate_worksheet_interactive(sentence_dict, word_index, word_list, num_wor
         sentence_ids = word_index[word]
         if not sentence_ids:
             continue
+        # pick a sentence not yet used
         available_sids = [sid for sid in sentence_ids if sid not in used_sentences]
         if not available_sids:
             word_bank.append(word)
             continue
         sid = random.choice(available_sids)
         sentence = sentence_dict[sid]
+        used_sentences.add(sid)
 
-        # Only blank **one occurrence** of the target word
-        def blank_once(match):
-            return "________________________"
-
+        # Replace the word with a single interactive blank
         if bilingual_mode:
+            # Split by Chinese characters
             parts = re.split(f"({CHINESE_RE.pattern})", sentence)
             new_parts = []
+            replaced = False
             for token in parts:
                 if CHINESE_RE.search(token):
                     new_parts.append(token)
                 else:
-                    pattern = re.compile(rf"(?<!\w){re.escape(word)}(?!\w)", re.IGNORECASE)
-                    token = pattern.sub(blank_once, token, count=1)
+                    if not replaced:
+                        # Replace only the first occurrence of the target word in English portion
+                        pattern = re.compile(rf"(?<!\w){re.escape(word)}(?!\w)", re.IGNORECASE)
+                        token, count = pattern.subn(f"<span class='blank' data-id='{blank_counter}'></span>", token, count=1)
+                        if count > 0:
+                            replaced = True
+                            blank_counter += 1
                     new_parts.append(token)
-            blanked = ''.join(new_parts)
+            sentence_html = ''.join(new_parts)
         else:
+            # Non-bilingual
             pattern = re.compile(rf"(?<!\w){re.escape(word)}(?!\w)", re.IGNORECASE)
-            blanked = pattern.sub(blank_once, sentence, count=1)
+            sentence_html, count = pattern.subn(f"<span class='blank' data-id='{blank_counter}'></span>", sentence, count=1)
+            if count > 0:
+                blank_counter += 1
 
-        worksheet.append(blanked)
+        sentences_html.append(sentence_html)
         word_bank.append(word)
-        used_sentences.add(sid)
 
     random.shuffle(word_bank)
-    return worksheet, word_bank
+    return sentences_html, word_bank
