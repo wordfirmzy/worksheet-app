@@ -31,7 +31,7 @@ function App() {
     formData.append("bilingual", bilingual);
 
     try {
-      const response = await fetch("https://worksheet-backend.onrender.com/", {
+      const response = await fetch("https://worksheet-backend.onrender.com/generate", {
         method: "POST",
         body: formData,
       });

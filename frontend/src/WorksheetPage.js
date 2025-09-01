@@ -1,91 +1,197 @@
-import React, { useEffect, useState } from "react";
+// src/WorksheetPage.js
+import React, { useState } from "react";
 import {
   DndContext,
   closestCenter,
-  PointerSensor,
   useSensor,
   useSensors,
+  PointerSensor,
+  KeyboardSensor,
 } from "@dnd-kit/core";
 import {
-  SortableContext,
   arrayMove,
-  verticalListSortingStrategy,
+  SortableContext,
   useSortable,
+  verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
+
 import "./WorksheetPage.css";
 
-function SortableItem({ id, children }) {
-  const { attributes, listeners, setNodeRef, transform, transition } = useSortable({ id });
+// Draggable word bank item
+function Word({ id }) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+  } = useSortable({ id });
+
   const style = {
     transform: CSS.Transform.toString(transform),
     transition,
-    border: "1px solid #ccc",
-    padding: "4px 8px",
+    padding: "6px 10px",
     margin: "4px",
-    backgroundColor: "#f9f9f9",
+    backgroundColor: "#f0f0f0",
+    border: "1px solid #ccc",
+    borderRadius: "6px",
     cursor: "grab",
+    display: "inline-block",
   };
+
   return (
     <div ref={setNodeRef} style={style} {...attributes} {...listeners}>
-      {children}
+      {id}
     </div>
   );
 }
 
-export default function WorksheetPage() {
-  const [worksheet, setWorksheet] = useState([]);
-  const [wordBank, setWordBank] = useState([]);
+// Droppable blank
+function Blank({ id, filledWord, correctWord }) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id });
 
-  const sensors = useSensors(useSensor(PointerSensor));
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    minWidth: "100px",
+    minHeight: "30px",
+    margin: "2px",
+    border: "2px dashed #aaa",
+    borderRadius: "4px",
+    backgroundColor: filledWord
+      ? filledWord === correctWord
+        ? "#d4edda"
+        : "#f8d7da"
+      : "#fff",
+    textAlign: "center",
+    lineHeight: "30px",
+    fontWeight: "bold",
+    cursor: isDragging ? "grabbing" : "pointer",
+  };
 
-  useEffect(() => {
-    const stored = localStorage.getItem("worksheetData");
-    if (stored) {
-      const data = JSON.parse(stored);
-      setWorksheet(data.worksheet);
-      setWordBank(data.word_bank);
-    } else {
-      window.location.href = "/";
-    }
-  }, []);
+  return (
+    <div ref={setNodeRef} style={style} {...attributes} {...listeners}>
+      {filledWord || "____"}
+    </div>
+  );
+}
+
+export default function WorksheetPage({ worksheet, wordBank, bilingual, onBack }) {
+  // Track which blanks have which words
+  const [blanks, setBlanks] = useState(
+    worksheet.flatMap((sentence, sIndex) => {
+      const count = (sentence.match(/____/g) || []).length;
+      return Array.from({ length: count }, (_, i) => ({
+        id: `s${sIndex}_b${i}`,
+        sentenceIndex: sIndex,
+        correctWord: null, // we’ll update later if needed
+        filledWord: null,
+      }));
+    })
+  );
+
+  const [availableWords, setAvailableWords] = useState(wordBank);
+
+  const sensors = useSensors(
+    useSensor(PointerSensor),
+    useSensor(KeyboardSensor)
+  );
 
   const handleDragEnd = (event) => {
     const { active, over } = event;
     if (!over) return;
-    const oldIndex = wordBank.indexOf(active.id);
-    const newIndex = wordBank.indexOf(over.id);
-    if (oldIndex !== newIndex) {
-      setWordBank(arrayMove(wordBank, oldIndex, newIndex));
+
+    // Dragging a word onto a blank
+    if (availableWords.includes(active.id) && over.id.startsWith("s")) {
+      setBlanks((prev) =>
+        prev.map((blank) =>
+          blank.id === over.id ? { ...blank, filledWord: active.id } : blank
+        )
+      );
+      setAvailableWords((prev) => prev.filter((w) => w !== active.id));
+    }
+
+    // Dragging a word back to the bank
+    if (active.id.startsWith("s") && over.id === "word-bank") {
+      const draggedBlank = blanks.find((b) => b.id === active.id);
+      if (draggedBlank?.filledWord) {
+        setAvailableWords((prev) => [...prev, draggedBlank.filledWord]);
+        setBlanks((prev) =>
+          prev.map((blank) =>
+            blank.id === active.id ? { ...blank, filledWord: null } : blank
+          )
+        );
+      }
     }
   };
 
-  return (
-    <div className="worksheet-page">
-      <h1>Drag-and-Drop Worksheet</h1>
-      <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-        <SortableContext items={wordBank} strategy={verticalListSortingStrategy}>
-          <div className="word-bank">
-            <h2>Word Bank</h2>
-            {wordBank.map((word) => (
-              <SortableItem key={word} id={word}>
-                {word}
-              </SortableItem>
-            ))}
-          </div>
-        </SortableContext>
-      </DndContext>
+  // Render sentence with blanks replaced by droppables
+  const renderSentence = (sentence, sIndex) => {
+    let parts = sentence.split("____");
+    let result = [];
 
-      <div className="worksheet-sentences">
-        <h2>Sentences</h2>
-        {worksheet.map((sentence, idx) => (
-          <p key={idx}>
-            {sentence.map((token, tidx) =>
-              token.blank ? <span className="blank">____</span> : token.text
-            )}
-          </p>
+    parts.forEach((part, i) => {
+      result.push(<span key={`p${i}`}>{part}</span>);
+      if (i < parts.length - 1) {
+        const blank = blanks.find((b) => b.sentenceIndex === sIndex && b.id.includes(`b${i}`));
+        result.push(
+          <Blank
+            key={blank.id}
+            id={blank.id}
+            filledWord={blank.filledWord}
+            correctWord={blank.correctWord}
+          />
+        );
+      }
+    });
+
+    return <div style={{ marginBottom: "1rem" }}>{result}</div>;
+  };
+
+  return (
+    <div style={{ padding: "2rem", fontFamily: "Arial" }}>
+      <button onClick={onBack} style={{ marginBottom: "1rem" }}>
+        ← Back
+      </button>
+      <h2>Drag-and-Drop Worksheet</h2>
+
+      <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+        {/* Sentences */}
+        {worksheet.map((sentence, sIndex) => (
+          <div key={sIndex}>{renderSentence(sentence, sIndex)}</div>
         ))}
-      </div>
+
+        {/* Word Bank */}
+        <div style={{ marginTop: "2rem" }}>
+          <h3>Word Bank</h3>
+          <SortableContext items={availableWords} strategy={verticalListSortingStrategy}>
+            <div
+              id="word-bank"
+              style={{
+                display: "flex",
+                flexWrap: "wrap",
+                gap: "0.5rem",
+                padding: "1rem",
+                border: "2px solid #ccc",
+                borderRadius: "8px",
+                minHeight: "60px",
+              }}
+            >
+              {availableWords.map((word) => (
+                <Word key={word} id={word} />
+              ))}
+            </div>
+          </SortableContext>
+        </div>
+      </DndContext>
     </div>
   );
 }
