@@ -11,44 +11,31 @@ import {
 } from "@dnd-kit/core";
 import { CSS } from "@dnd-kit/utilities";
 
-// Draggable Word
+const CHINESE_RE = /[\u4e00-\u9fff]/;
+
+// Draggable word
 function DraggableWord({ id, text }) {
   const { attributes, listeners, setNodeRef, transform, transition } = useDraggable({ id });
-
   const style = {
     transform: CSS.Transform.toString(transform),
     transition,
     padding: "0.5rem 1rem",
     margin: "0.25rem",
     borderRadius: "8px",
-    backgroundColor: "#fef3c7", // soft yellow
+    backgroundColor: "#fef3c7",
     border: "1px solid #fbbf24",
     boxShadow: "0 2px 5px rgba(0,0,0,0.2)",
     cursor: "grab",
     display: "inline-block",
     fontWeight: "bold",
     userSelect: "none",
-    transition: "all 0.2s ease",
   };
-
-  return (
-    <span
-      ref={setNodeRef}
-      style={style}
-      {...attributes}
-      {...listeners}
-      onMouseEnter={(e) => (e.target.style.backgroundColor = "#fde68a")}
-      onMouseLeave={(e) => (e.target.style.backgroundColor = "#fef3c7")}
-    >
-      {text}
-    </span>
-  );
+  return <span ref={setNodeRef} style={style} {...attributes} {...listeners}>{text}</span>;
 }
 
-// Droppable Blank
-function DroppableBlank({ id, content, isCorrect }) {
+// Droppable blank
+function DroppableBlank({ id, content, onDrop, isCorrect, bilingual }) {
   const { isOver, setNodeRef } = useDroppable({ id });
-
   const style = {
     display: "inline-block",
     minWidth: "140px",
@@ -63,30 +50,48 @@ function DroppableBlank({ id, content, isCorrect }) {
     boxShadow: isOver ? "0 0 8px rgba(0,0,0,0.2)" : "none",
   };
 
-  return <span ref={setNodeRef} style={style}>{content || "_______"}</span>;
+  return (
+    <span ref={setNodeRef} style={style} onClick={() => onDrop(id, null)}>
+      {content || "_______"}
+    </span>
+  );
 }
 
-// Sentence Part Renderer
-function SentencePart({ text }) {
-  const htmlText = text.replace(/\\N/g, "<br />");
-  return <span dangerouslySetInnerHTML={{ __html: htmlText }} />;
+// Sentence renderer with bilingual styling
+function SentencePart({ text, bilingual }) {
+  if (!bilingual) return <span>{text}</span>;
+
+  // Split by Chinese characters
+  const parts = text.split(CHINESE_RE);
+  const matches = text.match(CHINESE_RE) || [];
+  let rendered = [];
+  let i = 0;
+
+  for (const part of parts) {
+    if (part) rendered.push(<span key={`eng-${i}`}>{part}</span>);
+    if (matches[i]) rendered.push(
+      <span key={`chn-${i}`} style={{ backgroundColor: "#f0f0f0", borderRadius: "4px", padding: "0 2px" }}>
+        {matches[i]}
+      </span>
+    );
+    i++;
+  }
+
+  return <>{rendered}</>;
 }
 
-// Worksheet Page
+// Main WorksheetPage
 function WorksheetPage() {
   const location = useLocation();
   const navigate = useNavigate();
-  const { worksheet, word_bank } = location.state || {};
+  const { worksheet, word_bank, bilingual } = location.state || {};
 
   const [blanks, setBlanks] = useState([]);
   const [availableWords, setAvailableWords] = useState(word_bank || []);
   const [showAnswers, setShowAnswers] = useState(false);
 
   useEffect(() => {
-    if (!worksheet || !word_bank) {
-      navigate("/");
-      return;
-    }
+    if (!worksheet || !word_bank) { navigate("/"); return; }
 
     const blankedSentences = worksheet.map((item, i) => {
       const parts = item.sentence.split("_____");
@@ -117,9 +122,7 @@ function WorksheetPage() {
         const newCorrectness = [...sent.correctness];
 
         // Return existing word to bank if replacing
-        if (newBlanks[blankIndex]) {
-          setAvailableWords((prevWords) => [...prevWords, newBlanks[blankIndex]]);
-        }
+        if (newBlanks[blankIndex]) setAvailableWords((prevWords) => [...prevWords, newBlanks[blankIndex]]);
 
         newBlanks[blankIndex] = active.id;
         newCorrectness[blankIndex] = null;
@@ -127,15 +130,28 @@ function WorksheetPage() {
       })
     );
 
+    // Remove dragged word from bank
     setAvailableWords((prev) => prev.filter((w) => w !== active.id));
+  };
+
+  const removeWordFromBlank = (blankId) => {
+    const [sentId, blankIndex] = blankId.split(":");
+    setBlanks((prev) =>
+      prev.map((sent) => {
+        if (sent.id !== sentId) return sent;
+        const newBlanks = [...sent.blanks];
+        const removedWord = newBlanks[blankIndex];
+        if (removedWord) setAvailableWords((prev) => [...prev, removedWord]);
+        newBlanks[blankIndex] = null;
+        return { ...sent, blanks: newBlanks };
+      })
+    );
   };
 
   const checkAnswers = () => {
     setBlanks((prev) =>
       prev.map((sent) => {
-        const newCorrectness = sent.blanks.map(
-          (val, idx) => (val ? val === sent.answers[idx] : null)
-        );
+        const newCorrectness = sent.blanks.map((val, idx) => (val ? val === sent.answers[idx] : null));
         return { ...sent, correctness: newCorrectness };
       })
     );
@@ -144,29 +160,37 @@ function WorksheetPage() {
 
   return (
     <div className="flex justify-center py-6">
-      <div className="max-w-3xl w-full">
-        <h2 className="text-2xl font-bold mb-6 text-center">Interactive Worksheet</h2>
+      <div className="max-w-3xl w-full space-y-6">
 
-        <div className="mb-6 text-center">
-          <h3 className="font-semibold mb-2">Word Bank</h3>
+        {/* Word Bank */}
+        <div className="border rounded-lg p-4 shadow-md">
+          <h3 className="font-semibold mb-2 text-center">Word Bank</h3>
           <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
             <div className="flex flex-wrap justify-center gap-2">
               {availableWords.map((word) => (
                 <DraggableWord key={word} id={word} text={word} />
               ))}
             </div>
+          </DndContext>
+        </div>
 
-            <div className="mt-6 space-y-4">
+        {/* Worksheet */}
+        <div className="border rounded-lg p-4 shadow-md">
+          <h3 className="font-semibold mb-2 text-center">Worksheet</h3>
+          <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+            <div className="space-y-4">
               {blanks.map((sent) => (
                 <div key={sent.id}>
                   {sent.parts.map((part, i) => (
                     <React.Fragment key={i}>
-                      <SentencePart text={part} />
+                      <SentencePart text={part} bilingual={bilingual} />
                       {i < sent.blanks.length && (
                         <DroppableBlank
                           id={`${sent.id}:${i}`}
                           content={sent.blanks[i]}
                           isCorrect={showAnswers ? sent.correctness[i] : null}
+                          onDrop={removeWordFromBlank}
+                          bilingual={bilingual}
                         />
                       )}
                     </React.Fragment>
@@ -175,15 +199,16 @@ function WorksheetPage() {
               ))}
             </div>
           </DndContext>
-        </div>
 
-        <div className="text-center mt-6">
-          <button
-            className="px-6 py-2 bg-blue-500 text-white rounded shadow hover:bg-blue-600 transition"
-            onClick={checkAnswers}
-          >
-            Check Answers
-          </button>
+          {/* Check answers button */}
+          <div className="text-center mt-6">
+            <button
+              className="px-6 py-2 bg-blue-500 text-white rounded shadow hover:bg-blue-600 transition"
+              onClick={checkAnswers}
+            >
+              Check Answers
+            </button>
+          </div>
         </div>
       </div>
     </div>
