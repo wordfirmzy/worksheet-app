@@ -33,18 +33,29 @@ function AppForm() {
     try {
       const response = await fetch(
         "https://worksheet-backend.onrender.com/generate", // replace with your backend URL
-        {
-          method: "POST",
-          body: formData,
-        }
+        { method: "POST", body: formData }
       );
 
       if (!response.ok) throw new Error(`Server error: ${response.status}`);
 
       if (outputFormat === "web") {
         const data = await response.json();
-        navigate("/worksheet", { state: { worksheet: data.worksheet, word_bank: data.word_bank } });
+
+        // Transform backend JSON into a format suitable for WorksheetPage
+        const worksheetData = data.worksheet.map((item) => ({
+          sentence: item.sentence,
+          answer: item.answer,
+        }));
+
+        navigate("/worksheet", {
+          state: {
+            worksheet: worksheetData,
+            word_bank: data.word_bank,
+            bilingual: data.bilingual,
+          },
+        });
       } else {
+        // PDF / DOCX download logic
         const blob = await response.blob();
         const contentDisposition = response.headers.get("content-disposition");
         let filename = "worksheet";

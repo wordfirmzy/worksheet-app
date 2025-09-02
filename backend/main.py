@@ -79,12 +79,14 @@ async def generate(
         candidate_words = worksheet_generator.filter_words(
             freq_dict, familiarity.lower(), level.lower()
         )
-        worksheet, word_bank = worksheet_generator.generate_worksheet(
-            sentence_dict, word_index, candidate_words, bilingual_mode=bilingual
-        )
 
         fmt = output_format.lower().strip()
+
         if fmt == "web":
+            # Call the new web-friendly generator
+            worksheet, word_bank = worksheet_generator.generate_worksheet_web(
+                sentence_dict, word_index, candidate_words, bilingual_mode=bilingual
+            )
             return JSONResponse({
                 "message": "ok",
                 "worksheet": worksheet,
@@ -92,10 +94,15 @@ async def generate(
                 "bilingual": bilingual,
             })
 
+        # PDF / DOCX generation (unchanged)
         out_suffix = ".pdf" if fmt == "pdf" else ".docx"
         out_tmp = tempfile.NamedTemporaryFile(delete=False, suffix=out_suffix)
         out_tmp_path = out_tmp.name
         out_tmp.close()
+
+        worksheet, word_bank = worksheet_generator.generate_worksheet(
+            sentence_dict, word_index, candidate_words, bilingual_mode=bilingual
+        )
 
         if fmt == "pdf":
             worksheet_generator.save_as_pdf(out_tmp_path, worksheet, word_bank)

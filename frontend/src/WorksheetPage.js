@@ -11,12 +11,12 @@ import {
 } from "@dnd-kit/core";
 import { CSS } from "@dnd-kit/utilities";
 
+// Draggable word component
 function DraggableWord({ id, text }) {
-  const { attributes, listeners, setNodeRef, transform, transition } =
-    useDraggable({ id });
+  const { attributes, listeners, setNodeRef, transform, transition } = useDraggable({ id });
 
   const style = {
-    transform: CSS.Translate.toString(transform),
+    transform: CSS.Transform.toString(transform),
     transition,
     padding: "0.25rem 0.5rem",
     margin: "0.25rem",
@@ -34,6 +34,7 @@ function DraggableWord({ id, text }) {
   );
 }
 
+// Droppable blank component
 function DroppableBlank({ id, content }) {
   const { isOver, setNodeRef } = useDroppable({ id });
 
@@ -63,9 +64,9 @@ function WorksheetPage() {
       return;
     }
 
-    // Replace blanks with objects for drag-and-drop
-    const blankedSentences = worksheet.map((sentence, i) => {
-      const parts = sentence.split("________________________");
+    // Transform sentences into parts and blank placeholders
+    const blankedSentences = worksheet.map((item, i) => {
+      const parts = item.sentence.split("_____"); // align with backend blank
       return {
         id: `sent-${i}`,
         parts,
@@ -80,19 +81,19 @@ function WorksheetPage() {
   const handleDragEnd = (event) => {
     const { active, over } = event;
 
-    if (over) {
-      const [sentId, blankIndex] = over.id.split(":"); // e.g. "sent-1:0"
-      setBlanks((prev) =>
-        prev.map((sent) => {
-          if (sent.id !== sentId) return sent;
-          const newBlanks = [...sent.blanks];
-          newBlanks[blankIndex] = active.id;
-          return { ...sent, blanks: newBlanks };
-        })
-      );
+    if (!over) return;
 
-      setAvailableWords((prev) => prev.filter((w) => w !== active.id));
-    }
+    const [sentId, blankIndex] = over.id.split(":");
+    setBlanks((prev) =>
+      prev.map((sent) => {
+        if (sent.id !== sentId) return sent;
+        const newBlanks = [...sent.blanks];
+        newBlanks[blankIndex] = active.id;
+        return { ...sent, blanks: newBlanks };
+      })
+    );
+
+    setAvailableWords((prev) => prev.filter((w) => w !== active.id));
   };
 
   return (
@@ -108,7 +109,7 @@ function WorksheetPage() {
             ))}
           </div>
 
-          <div>
+          <div className="mt-6">
             {blanks.map((sent) => (
               <div key={sent.id} className="mb-4">
                 {sent.parts.map((part, i) => (
