@@ -19,11 +19,63 @@ ABBREVIATIONS = [
 ]
 
 # ---------------------------
-# Subtitle Parsing
+# ASS Subtitle Cleaning
+# ---------------------------
+def clean_subtitle_line(line: str) -> str:
+    if not line.startswith("Dialogue:"):
+        return ""
+    parts = line.split(",", 9)
+    if len(parts) < 10:
+        return ""
+    text = parts[-1].strip()
+    text = re.sub(r"\{.*?\}", "", text)  # remove style codes
+    text = text.replace("\\N", " ")
+    if re.search(r"[\u4e00-\u9fff]", text):
+        return ""
+    return text.strip()
+
+def parse_ass_file(file_path: str) -> list[str]:
+    sentences = []
+    with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
+        for line in f:
+            cleaned = clean_subtitle_line(line)
+            if cleaned:
+                sentences.append(cleaned)
+    return sentences
+
+# ---------------------------
+# SRT Subtitle Cleaning
+# ---------------------------
+def parse_srt_file(file_path: str) -> list[str]:
+    sentences = []
+    with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
+        raw_text = f.read()
+
+    blocks = raw_text.split("\n\n")
+    for block in blocks:
+        lines = block.strip().split("\n")
+        if len(lines) >= 3:
+            text_lines = lines[2:]
+            for t in text_lines:
+                t = re.sub(r"<[^>]+>", "", t)  # remove HTML tags
+                if re.search(r"[\u4e00-\u9fff]", t):
+                    continue
+                cleaned = clean_sentence(t)
+                if cleaned:
+                    sentences.append(cleaned)
+    return sentences
+
+# ---------------------------
+# Generic Subtitle Parsing (ASS / SRT / TXT)
 # ---------------------------
 def parse_subtitles(file_path, bilingual_mode=False):
-    """Reads subtitle file and returns cleaned sentences."""
-    with open(file_path, "r", encoding="utf-8") as f:
+    ext = os.path.splitext(file_path)[1].lower()
+    if ext == ".ass":
+        return parse_ass_file(file_path)
+    if ext == ".srt":
+        return parse_srt_file(file_path)
+
+    with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
         raw_text = f.read()
 
     lines = raw_text.splitlines()
@@ -38,34 +90,19 @@ def parse_subtitles(file_path, bilingual_mode=False):
     return sentences
 
 # ---------------------------
-# Cleaning
+# Cleaning (non-ASS generic text)
 # ---------------------------
 def clean_sentence(text):
-    """Strip unwanted punctuation, handle abbreviations, etc."""
-    # Remove orphaned Chinese punctuation
     text = re.sub(rf'^[{CJK_PUNCT_RE}]+|[{CJK_PUNCT_RE}]+$', '', text)
-
-    # Protect abbreviations from being split as sentence ends
     for abbr in ABBREVIATIONS:
         text = text.replace(abbr, abbr.replace('.', '§'))
-
-    # Optional additional cleaning logic here
-
-    # Restore abbreviations
     text = text.replace('§', '.')
-
-    return text
+    return text.strip()
 
 # ---------------------------
 # Dictionary building
 # ---------------------------
 def build_dictionaries(sentences):
-    """
-    Returns:
-        - sentence_dict: {id: sentence}
-        - word_index: {word: [sentence_ids]}
-        - freq_dict: {word: frequency}
-    """
     sentence_dict = {}
     word_index = defaultdict(list)
     freq_dict = defaultdict(int)
@@ -84,7 +121,6 @@ def build_dictionaries(sentences):
 # Word filtering
 # ---------------------------
 def filter_words(freq_dict, familiarity='once', level='beginner'):
-    """Return candidate words based on frequency and level."""
     filtered = []
     for w, freq in freq_dict.items():
         if familiarity == 'once' and freq == 1:
@@ -130,30 +166,15 @@ def generate_worksheet(sentence_dict, word_index, word_list, num_words=12, bilin
         if word not in word_index:
             continue
         sentence_ids = word_index[word]
-        if not sentence_ids:
-            continue
         available_sids = [sid for sid in sentence_ids if sid not in used_sentences]
         if not available_sids:
             word_bank.append(word)
             continue
         sid = random.choice(available_sids)
         sentence = sentence_dict[sid]
-        blanked = sentence
 
-        if bilingual_mode:
-            parts = re.split(f"({CHINESE_RE.pattern})", blanked)
-            new_parts = []
-            for token in parts:
-                if CHINESE_RE.search(token):
-                    new_parts.append(token)
-                else:
-                    pattern = re.compile(rf"(?<!\w){re.escape(word)}(?!\w)", re.IGNORECASE)
-                    token = pattern.sub("________________________", token)
-                    new_parts.append(token)
-            blanked = ''.join(new_parts)
-        else:
-            pattern = re.compile(rf"(?<!\w){re.escape(word)}(?!\w)", re.IGNORECASE)
-            blanked = pattern.sub("________________________", blanked)
+        pattern = re.compile(rf"(?<!\\w){re.escape(word)}(?!\\w)", re.IGNORECASE)
+        blanked = pattern.sub("________________________", sentence)
 
         worksheet.append(blanked)
         word_bank.append(word)
@@ -166,11 +187,6 @@ def generate_worksheet(sentence_dict, word_index, word_list, num_words=12, bilin
 # Interactive Web Output
 # ---------------------------
 def generate_worksheet_web(sentence_dict, word_index, word_list, num_words=12, bilingual_mode=False):
-    """
-    Returns:
-        - worksheet: list of dicts {sentence: ..., answer: ...} for DnD
-        - word_bank: list of words
-    """
     chosen_words = random.sample(word_list, min(num_words, len(word_list)))
     worksheet = []
     word_bank = []
@@ -187,25 +203,8 @@ def generate_worksheet_web(sentence_dict, word_index, word_list, num_words=12, b
         sid = random.choice(available_sids)
         sentence = sentence_dict[sid]
 
-        # Replace **only first occurrence** with blank
-        if bilingual_mode:
-            parts = re.split(f"({CHINESE_RE.pattern})", sentence)
-            new_parts = []
-            replaced = False
-            for token in parts:
-                if CHINESE_RE.search(token):
-                    new_parts.append(token)
-                else:
-                    if not replaced:
-                        pattern = re.compile(rf"(?<!\w){re.escape(word)}(?!\w)", re.IGNORECASE)
-                        token, count = pattern.subn(f"_____", token, count=1)
-                        if count > 0:
-                            replaced = True
-                    new_parts.append(token)
-            blanked = ''.join(new_parts)
-        else:
-            pattern = re.compile(rf"(?<!\w){re.escape(word)}(?!\w)", re.IGNORECASE)
-            blanked, count = pattern.subn("_____", sentence, count=1)
+        pattern = re.compile(rf"(?<!\\w){re.escape(word)}(?!\\w)", re.IGNORECASE)
+        blanked, count = pattern.subn("_____", sentence, count=1)
 
         worksheet.append({"sentence": blanked, "answer": word})
         word_bank.append(word)
