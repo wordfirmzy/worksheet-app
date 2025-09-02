@@ -6,19 +6,17 @@ import {
   useSensors,
   PointerSensor,
   closestCenter,
+  useDraggable,
+  useDroppable,
 } from "@dnd-kit/core";
-import {
-  SortableContext,
-  sortableKeyboardCoordinates,
-  verticalListSortingStrategy,
-  useSortable,
-} from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 
 function DraggableWord({ id, text }) {
-  const { attributes, listeners, setNodeRef, transform, transition } = useSortable({ id });
+  const { attributes, listeners, setNodeRef, transform, transition } =
+    useDraggable({ id });
+
   const style = {
-    transform: CSS.Transform.toString(transform),
+    transform: CSS.Translate.toString(transform),
     transition,
     padding: "0.25rem 0.5rem",
     margin: "0.25rem",
@@ -28,11 +26,27 @@ function DraggableWord({ id, text }) {
     cursor: "grab",
     display: "inline-block",
   };
+
   return (
     <span ref={setNodeRef} style={style} {...attributes} {...listeners}>
       {text}
     </span>
   );
+}
+
+function DroppableBlank({ id, content }) {
+  const { isOver, setNodeRef } = useDroppable({ id });
+
+  const style = {
+    display: "inline-block",
+    minWidth: "120px",
+    borderBottom: "2px solid #000",
+    margin: "0 4px",
+    textAlign: "center",
+    backgroundColor: isOver ? "#d1ffd1" : "transparent",
+  };
+
+  return <span ref={setNodeRef} style={style}>{content || "_______"}</span>;
 }
 
 function WorksheetPage() {
@@ -63,18 +77,22 @@ function WorksheetPage() {
 
   const sensors = useSensors(useSensor(PointerSensor));
 
-  const handleDrop = (wordId, sentenceId, blankIndex) => {
-    setBlanks((prev) =>
-      prev.map((sent) => {
-        if (sent.id !== sentenceId) return sent;
-        const newBlanks = [...sent.blanks];
-        newBlanks[blankIndex] = wordId;
-        return { ...sent, blanks: newBlanks };
-      })
-    );
+  const handleDragEnd = (event) => {
+    const { active, over } = event;
 
-    // Remove from available words
-    setAvailableWords((prev) => prev.filter((w) => w !== wordId));
+    if (over) {
+      const [sentId, blankIndex] = over.id.split(":"); // e.g. "sent-1:0"
+      setBlanks((prev) =>
+        prev.map((sent) => {
+          if (sent.id !== sentId) return sent;
+          const newBlanks = [...sent.blanks];
+          newBlanks[blankIndex] = active.id;
+          return { ...sent, blanks: newBlanks };
+        })
+      );
+
+      setAvailableWords((prev) => prev.filter((w) => w !== active.id));
+    }
   };
 
   return (
@@ -83,40 +101,31 @@ function WorksheetPage() {
 
       <div className="mb-6">
         <h3 className="font-semibold mb-2">Word Bank</h3>
-        <DndContext sensors={sensors} collisionDetection={closestCenter}>
-          <SortableContext items={availableWords} strategy={verticalListSortingStrategy}>
-            <div>
-              {availableWords.map((word) => (
-                <DraggableWord key={word} id={word} text={word} />
-              ))}
-            </div>
-          </SortableContext>
-        </DndContext>
-      </div>
-
-      <div>
-        {blanks.map((sent) => (
-          <div key={sent.id} className="mb-4">
-            {sent.parts.map((part, i) => (
-              <React.Fragment key={i}>
-                <span>{part}</span>
-                {i < sent.blanks.length && (
-                  <span
-                    style={{
-                      display: "inline-block",
-                      minWidth: "120px",
-                      borderBottom: "2px solid #000",
-                      margin: "0 4px",
-                      textAlign: "center",
-                    }}
-                  >
-                    {sent.blanks[i] || "_______"}
-                  </span>
-                )}
-              </React.Fragment>
+        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+          <div>
+            {availableWords.map((word) => (
+              <DraggableWord key={word} id={word} text={word} />
             ))}
           </div>
-        ))}
+
+          <div>
+            {blanks.map((sent) => (
+              <div key={sent.id} className="mb-4">
+                {sent.parts.map((part, i) => (
+                  <React.Fragment key={i}>
+                    <span>{part}</span>
+                    {i < sent.blanks.length && (
+                      <DroppableBlank
+                        id={`${sent.id}:${i}`}
+                        content={sent.blanks[i]}
+                      />
+                    )}
+                  </React.Fragment>
+                ))}
+              </div>
+            ))}
+          </div>
+        </DndContext>
       </div>
     </div>
   );
