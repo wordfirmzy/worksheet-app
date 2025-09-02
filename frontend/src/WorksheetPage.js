@@ -11,9 +11,12 @@ import {
 } from "@dnd-kit/core";
 import { CSS } from "@dnd-kit/utilities";
 
-// Draggable word component
+// --------------------
+// Draggable Word
+// --------------------
 function DraggableWord({ id, text }) {
-  const { attributes, listeners, setNodeRef, transform, transition } = useDraggable({ id });
+  const { attributes, listeners, setNodeRef, transform, transition } =
+    useDraggable({ id });
 
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -34,8 +37,10 @@ function DraggableWord({ id, text }) {
   );
 }
 
-// Droppable blank component
-function DroppableBlank({ id, content, onClick, correct }) {
+// --------------------
+// Droppable Blank
+// --------------------
+function DroppableBlank({ id, content, isCorrect }) {
   const { isOver, setNodeRef } = useDroppable({ id });
 
   const style = {
@@ -44,23 +49,17 @@ function DroppableBlank({ id, content, onClick, correct }) {
     borderBottom: "2px solid #000",
     margin: "0 4px",
     textAlign: "center",
-    cursor: content ? "pointer" : "default",
-    backgroundColor: isOver
-      ? "#d1ffd1"
-      : correct === true
-      ? "#d4edda"
-      : correct === false
-      ? "#f8d7da"
-      : "transparent",
+    backgroundColor: isOver ? "#d1ffd1" : "transparent",
+    color: isCorrect === true ? "green" : isCorrect === false ? "red" : "black",
+    fontWeight: isCorrect !== null ? "bold" : "normal",
   };
 
-  return (
-    <span ref={setNodeRef} style={style} onClick={onClick}>
-      {content || "_______"}
-    </span>
-  );
+  return <span ref={setNodeRef} style={style}>{content || "_______"}</span>;
 }
 
+// --------------------
+// Worksheet Page
+// --------------------
 function WorksheetPage() {
   const location = useLocation();
   const navigate = useNavigate();
@@ -68,8 +67,9 @@ function WorksheetPage() {
 
   const [blanks, setBlanks] = useState([]);
   const [availableWords, setAvailableWords] = useState(word_bank || []);
-  const [checked, setChecked] = useState(false);
+  const [showAnswers, setShowAnswers] = useState(false);
 
+  // Initialize blanked sentences
   useEffect(() => {
     if (!worksheet || !word_bank) {
       navigate("/"); // redirect home if no data
@@ -78,15 +78,15 @@ function WorksheetPage() {
 
     const blankedSentences = worksheet.map((item, i) => {
       const parts = item.sentence.split("_____");
-      const answers = [item.answer]; // assuming one blank per sentence for simplicity
       return {
         id: `sent-${i}`,
         parts,
         blanks: Array(parts.length - 1).fill(null),
-        answers,
-        result: Array(parts.length - 1).fill(null),
+        answers: Array(parts.length - 1).fill(item.answer),
+        correctness: Array(parts.length - 1).fill(null),
       };
     });
+
     setBlanks(blankedSentences);
   }, [worksheet, word_bank, navigate]);
 
@@ -97,55 +97,44 @@ function WorksheetPage() {
     if (!over) return;
 
     const [sentId, blankIndex] = over.id.split(":");
+
     setBlanks((prev) =>
       prev.map((sent) => {
         if (sent.id !== sentId) return sent;
         const newBlanks = [...sent.blanks];
+        const newCorrectness = [...sent.correctness];
+
+        // If there is already a word in this blank, return it to the bank
+        if (newBlanks[blankIndex]) {
+          setAvailableWords((prevWords) => [...prevWords, newBlanks[blankIndex]]);
+        }
+
         newBlanks[blankIndex] = active.id;
-        return { ...sent, blanks: newBlanks };
+        newCorrectness[blankIndex] = null; // reset correctness
+        return { ...sent, blanks: newBlanks, correctness: newCorrectness };
       })
     );
+
     setAvailableWords((prev) => prev.filter((w) => w !== active.id));
-    setChecked(false);
   };
 
-  const handleBlankClick = (sentId, blankIndex) => {
+  const checkAnswers = () => {
     setBlanks((prev) =>
       prev.map((sent) => {
-        if (sent.id !== sentId) return sent;
-        const word = sent.blanks[blankIndex];
-        if (!word) return sent;
-        const newBlanks = [...sent.blanks];
-        newBlanks[blankIndex] = null;
-        setAvailableWords((prev) => [...prev, word]);
-        return { ...sent, blanks: newBlanks };
+        const newCorrectness = sent.blanks.map(
+          (val, idx) => (val ? val === sent.answers[idx] : null)
+        );
+        return { ...sent, correctness: newCorrectness };
       })
     );
-    setChecked(false);
-  };
-
-  const handleCheckAnswers = () => {
-    setBlanks((prev) =>
-      prev.map((sent) => {
-        const result = sent.blanks.map((word, i) => word === sent.answers[i]);
-        return { ...sent, result };
-      })
-    );
-    setChecked(true);
+    setShowAnswers(true);
   };
 
   return (
     <div className="p-6">
       <h2 className="text-2xl font-bold mb-4">Interactive Worksheet</h2>
 
-      <button
-        className="mb-4 px-3 py-1 bg-blue-500 text-white rounded hover:bg-blue-600"
-        onClick={handleCheckAnswers}
-      >
-        Check Answers
-      </button>
-
-      <div className="mb-6">
+      <div className="mb-4">
         <h3 className="font-semibold mb-2">Word Bank</h3>
         <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
           <div>
@@ -164,8 +153,7 @@ function WorksheetPage() {
                       <DroppableBlank
                         id={`${sent.id}:${i}`}
                         content={sent.blanks[i]}
-                        onClick={() => handleBlankClick(sent.id, i)}
-                        correct={checked ? sent.result[i] : null}
+                        isCorrect={showAnswers ? sent.correctness[i] : null}
                       />
                     )}
                   </React.Fragment>
@@ -175,6 +163,13 @@ function WorksheetPage() {
           </div>
         </DndContext>
       </div>
+
+      <button
+        className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+        onClick={checkAnswers}
+      >
+        Check Answers
+      </button>
     </div>
   );
 }
