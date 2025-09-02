@@ -58,6 +58,15 @@ function DroppableBlank({ id, content, isCorrect }) {
 }
 
 // --------------------
+// Part Renderer
+// --------------------
+function SentencePart({ text }) {
+  // Replace \N with <br> for rendering subtitles / line breaks
+  const htmlText = text.replace(/\\N/g, "<br />");
+  return <span dangerouslySetInnerHTML={{ __html: htmlText }} />;
+}
+
+// --------------------
 // Worksheet Page
 // --------------------
 function WorksheetPage() {
@@ -69,15 +78,14 @@ function WorksheetPage() {
   const [availableWords, setAvailableWords] = useState(word_bank || []);
   const [showAnswers, setShowAnswers] = useState(false);
 
-  // Initialize blanked sentences
   useEffect(() => {
     if (!worksheet || !word_bank) {
-      navigate("/"); // redirect home if no data
+      navigate("/");
       return;
     }
 
     const blankedSentences = worksheet.map((item, i) => {
-      const parts = item.sentence.split("_____");
+      const parts = item.sentence.split("_____"); // backend blank
       return {
         id: `sent-${i}`,
         parts,
@@ -104,13 +112,12 @@ function WorksheetPage() {
         const newBlanks = [...sent.blanks];
         const newCorrectness = [...sent.correctness];
 
-        // If there is already a word in this blank, return it to the bank
         if (newBlanks[blankIndex]) {
           setAvailableWords((prevWords) => [...prevWords, newBlanks[blankIndex]]);
         }
 
         newBlanks[blankIndex] = active.id;
-        newCorrectness[blankIndex] = null; // reset correctness
+        newCorrectness[blankIndex] = null;
         return { ...sent, blanks: newBlanks, correctness: newCorrectness };
       })
     );
@@ -148,7 +155,7 @@ function WorksheetPage() {
               <div key={sent.id} className="mb-4">
                 {sent.parts.map((part, i) => (
                   <React.Fragment key={i}>
-                    <span>{part}</span>
+                    <SentencePart text={part} />
                     {i < sent.blanks.length && (
                       <DroppableBlank
                         id={`${sent.id}:${i}`}
