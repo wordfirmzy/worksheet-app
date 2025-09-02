@@ -11,64 +11,68 @@ import {
 } from "@dnd-kit/core";
 import { CSS } from "@dnd-kit/utilities";
 
-// --------------------
 // Draggable Word
-// --------------------
 function DraggableWord({ id, text }) {
-  const { attributes, listeners, setNodeRef, transform, transition } =
-    useDraggable({ id });
+  const { attributes, listeners, setNodeRef, transform, transition } = useDraggable({ id });
 
   const style = {
     transform: CSS.Transform.toString(transform),
     transition,
-    padding: "0.25rem 0.5rem",
+    padding: "0.5rem 1rem",
     margin: "0.25rem",
-    border: "1px solid #333",
-    borderRadius: "4px",
-    backgroundColor: "#f0f0f0",
+    borderRadius: "8px",
+    backgroundColor: "#fef3c7", // soft yellow
+    border: "1px solid #fbbf24",
+    boxShadow: "0 2px 5px rgba(0,0,0,0.2)",
     cursor: "grab",
     display: "inline-block",
+    fontWeight: "bold",
+    userSelect: "none",
+    transition: "all 0.2s ease",
   };
 
   return (
-    <span ref={setNodeRef} style={style} {...attributes} {...listeners}>
+    <span
+      ref={setNodeRef}
+      style={style}
+      {...attributes}
+      {...listeners}
+      onMouseEnter={(e) => (e.target.style.backgroundColor = "#fde68a")}
+      onMouseLeave={(e) => (e.target.style.backgroundColor = "#fef3c7")}
+    >
       {text}
     </span>
   );
 }
 
-// --------------------
 // Droppable Blank
-// --------------------
 function DroppableBlank({ id, content, isCorrect }) {
   const { isOver, setNodeRef } = useDroppable({ id });
 
   const style = {
     display: "inline-block",
-    minWidth: "120px",
-    borderBottom: "2px solid #000",
+    minWidth: "140px",
+    padding: "0.25rem 0.5rem",
     margin: "0 4px",
+    borderBottom: "3px solid #000",
+    borderRadius: "4px",
     textAlign: "center",
-    backgroundColor: isOver ? "#d1ffd1" : "transparent",
+    backgroundColor: isOver ? "#d1ffd1" : "#fff",
     color: isCorrect === true ? "green" : isCorrect === false ? "red" : "black",
     fontWeight: isCorrect !== null ? "bold" : "normal",
+    boxShadow: isOver ? "0 0 8px rgba(0,0,0,0.2)" : "none",
   };
 
   return <span ref={setNodeRef} style={style}>{content || "_______"}</span>;
 }
 
-// --------------------
-// Part Renderer
-// --------------------
+// Sentence Part Renderer
 function SentencePart({ text }) {
-  // Replace \N with <br> for rendering subtitles / line breaks
   const htmlText = text.replace(/\\N/g, "<br />");
   return <span dangerouslySetInnerHTML={{ __html: htmlText }} />;
 }
 
-// --------------------
 // Worksheet Page
-// --------------------
 function WorksheetPage() {
   const location = useLocation();
   const navigate = useNavigate();
@@ -85,7 +89,7 @@ function WorksheetPage() {
     }
 
     const blankedSentences = worksheet.map((item, i) => {
-      const parts = item.sentence.split("_____"); // backend blank
+      const parts = item.sentence.split("_____");
       return {
         id: `sent-${i}`,
         parts,
@@ -112,6 +116,7 @@ function WorksheetPage() {
         const newBlanks = [...sent.blanks];
         const newCorrectness = [...sent.correctness];
 
+        // Return existing word to bank if replacing
         if (newBlanks[blankIndex]) {
           setAvailableWords((prevWords) => [...prevWords, newBlanks[blankIndex]]);
         }
@@ -138,45 +143,49 @@ function WorksheetPage() {
   };
 
   return (
-    <div className="p-6">
-      <h2 className="text-2xl font-bold mb-4">Interactive Worksheet</h2>
+    <div className="flex justify-center py-6">
+      <div className="max-w-3xl w-full">
+        <h2 className="text-2xl font-bold mb-6 text-center">Interactive Worksheet</h2>
 
-      <div className="mb-4">
-        <h3 className="font-semibold mb-2">Word Bank</h3>
-        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-          <div>
-            {availableWords.map((word) => (
-              <DraggableWord key={word} id={word} text={word} />
-            ))}
-          </div>
+        <div className="mb-6 text-center">
+          <h3 className="font-semibold mb-2">Word Bank</h3>
+          <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+            <div className="flex flex-wrap justify-center gap-2">
+              {availableWords.map((word) => (
+                <DraggableWord key={word} id={word} text={word} />
+              ))}
+            </div>
 
-          <div className="mt-6">
-            {blanks.map((sent) => (
-              <div key={sent.id} className="mb-4">
-                {sent.parts.map((part, i) => (
-                  <React.Fragment key={i}>
-                    <SentencePart text={part} />
-                    {i < sent.blanks.length && (
-                      <DroppableBlank
-                        id={`${sent.id}:${i}`}
-                        content={sent.blanks[i]}
-                        isCorrect={showAnswers ? sent.correctness[i] : null}
-                      />
-                    )}
-                  </React.Fragment>
-                ))}
-              </div>
-            ))}
-          </div>
-        </DndContext>
+            <div className="mt-6 space-y-4">
+              {blanks.map((sent) => (
+                <div key={sent.id}>
+                  {sent.parts.map((part, i) => (
+                    <React.Fragment key={i}>
+                      <SentencePart text={part} />
+                      {i < sent.blanks.length && (
+                        <DroppableBlank
+                          id={`${sent.id}:${i}`}
+                          content={sent.blanks[i]}
+                          isCorrect={showAnswers ? sent.correctness[i] : null}
+                        />
+                      )}
+                    </React.Fragment>
+                  ))}
+                </div>
+              ))}
+            </div>
+          </DndContext>
+        </div>
+
+        <div className="text-center mt-6">
+          <button
+            className="px-6 py-2 bg-blue-500 text-white rounded shadow hover:bg-blue-600 transition"
+            onClick={checkAnswers}
+          >
+            Check Answers
+          </button>
+        </div>
       </div>
-
-      <button
-        className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
-        onClick={checkAnswers}
-      >
-        Check Answers
-      </button>
     </div>
   );
 }
